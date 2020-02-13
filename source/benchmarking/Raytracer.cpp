@@ -15,14 +15,14 @@
 #include <utility>
 
 namespace vecgeom {
-/*
-Raytracer::Raytracer(VPlacedVolume const *world, Vector3D<double> const &source_position,  Vector3D<double> const
-&up_vector, int img_size_px, int img_size_py) : fSize_px(img_size_px), fSize_py(img_size_py), fStart(camera_position),
-fUp(up_vector)
+
+Raytracer::Raytracer(VPlacedVolume const *world, Vector3D<double> const &source_position,
+                     Vector3D<double> const &up_vector, int img_size_px, int img_size_py, ERTmodel model)
+    : fSize_px(img_size_px), fSize_py(img_size_py), fModel(model), fStart(source_position), fUp(up_vector)
 {
   SetWorld(world);
 }
-*/
+
 Raytracer::~Raytracer()
 {
   delete[] fRays;
@@ -62,14 +62,12 @@ void Raytracer::SetWorld(VPlacedVolume_t world)
   fLeftC = fStart - 0.5 * fScale * (fSize_px * fRight + fSize_py * fUp);
 
   // Calculate light source position for the specular model
-  if (fModel == kRTspecular) {
-    if (fSourceDir.Mag2() < kTolerance) {
-      // Light position on top-left
-      Vector3D<double> ptstart = fStart - fRight;
-      Vector3D<double> ptend   = fDir;
-      fSourceDir               = ptend - ptstart;
-      fSourceDir.Normalize();
-    }
+  if (fSourceDir.Mag2() < kTolerance) {
+    // Light position on top-left
+    Vector3D<double> ptstart = fStart - fRight;
+    Vector3D<double> ptend   = fDir;
+    fSourceDir               = ptend - ptstart;
+    fSourceDir.Normalize();
   }
   // Allocate rays
   fNrays                = fSize_px * fSize_py;
@@ -103,6 +101,8 @@ void Raytracer::StartRay(int iray)
   Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
   // Locate starting point
   Ray_t &ray  = fRays[px * fSize_py + py];
+  ray.fPos    = start;
+  ray.fDir    = fDir;
   ray.fVolume = GlobalLocator::LocateGlobalPoint(fWorld, ray.fPos, *ray.fCrtState, true);
   // Special case when starting point is outside the setup
   int itry = 0;
@@ -126,9 +126,9 @@ void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
     ray.fNextState->TopMatrix(m);
     auto localpoint = m.Transform(ray.fPos);
     Vector3D<double> norm, lnorm;
-    bool valid =
-        (ray.fVolume != nullptr) && ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
+    bool valid = ray.fVolume != nullptr;
     if (valid) {
+      ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
       m.InverseTransformDirection(lnorm, norm);
       Vector3D<double> refl = 2 * norm.Dot(fSourceDir) - fSourceDir;
       refl.Normalize();
@@ -150,8 +150,9 @@ void Raytracer::PropagateRays()
   for (int iray = 0; iray < fNrays; ++iray) {
     StartRay(iray);
   }
-
-  while (PropagateAllOneStep()) {
+  int remaining;
+  while ((remaining = PropagateAllOneStep())) {
+    std::cout << "remaining " << remaining << std::endl;
   }
 }
 
@@ -177,10 +178,12 @@ int Raytracer::PropagateOneStep(int iray)
   Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
   Ray_t &ray              = fRays[px * fSize_py + py];
 
-  auto nav     = dynamic_cast<NewSimpleNavigator<false> *>(NewSimpleNavigator<false>::Instance());
+  auto nav     = static_cast<NewSimpleNavigator<false> *>(NewSimpleNavigator<false>::Instance());
   auto nextvol = ray.fVolume;
   double snext = kInfLength;
   int nsmall   = 0;
+  // std::cout << "ray " << iray << " currently in: ";
+  // ray.fCrtState->Print();
   while (nextvol == ray.fVolume && nsmall < kMaxTries) {
     snext   = nav->ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
     nextvol = ray.fNextState->Top();
@@ -196,7 +199,10 @@ int Raytracer::PropagateOneStep(int iray)
   ray.fNcrossed++;
   ray.fVolume = nextvol;
   if (ray.fVolume == nullptr) ray.fDone = true;
-  ApplyRTmodel(ray, snext);
+  if (nextvol) ApplyRTmodel(ray, snext);
+  if (!ray.fDone) {
+    ray.fCrtState = ray.fNextState;
+  }
   return (ray.fDone) ? 0 : 1;
 }
 

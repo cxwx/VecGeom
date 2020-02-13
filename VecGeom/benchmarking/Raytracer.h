@@ -17,8 +17,8 @@
 
 namespace vecgeom {
 
-enum ERTmodel { kRTxray, kRTspecular, kRTtransparent, kRTdiffuse };
-enum ERTView { kRTVparallel, kRTVperspective };
+enum ERTmodel { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
+enum ERTView { kRTVparallel = 0, kRTVperspective };
 
 union Color_t {
   static constexpr float kToFloat = 1. / 0xFF;
@@ -149,7 +149,7 @@ public:
   /// vector on the camera plane determines the 'up' direction of the image \param img_size_px image size on X in pixels
   /// \param img_size_py image size on Y in pixels
   Raytracer(VPlacedVolume const *world, Vector3D<double> const &source_position, Vector3D<double> const &up_vector,
-            int img_size_px, int img_size_py);
+            int img_size_px, int img_size_py, ERTmodel model);
 
   ~Raytracer();
 
@@ -169,16 +169,10 @@ public:
   void SetLightSourceDir(Vector3D<double> const &pos) { fSourceDir = pos; }
 
   /// \brief set light color
-  void SetLightColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
-  {
-    fLightColor = Color_t(r, g, b, a);
-  }
+  void SetLightColor(unsigned int col) { fLightColor = col; }
 
   /// \brief set object color
-  void SetObjColor(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
-  {
-    fObjColor = Color_t(r, g, b, a);
-  }
+  void SetObjColor(unsigned int col) { fObjColor = col; }
 
   /// \brief Entry point to propagate all rays
   void PropagateRays();
