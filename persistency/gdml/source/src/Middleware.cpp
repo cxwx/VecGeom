@@ -645,13 +645,14 @@ double Middleware::GetLengthMultiplier(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode co
   auto const nodeName          = Helper::Transcode(aDOMNode->getNodeName());
   auto const unitTag           = (nodeName == "position") ? "unit" : "lunit";
   auto const unit              = GetAttribute(unitTag, attributes);
-  auto const lengthMultiplier =
-      (unit == "mm")
-          ? 1e-1
-          : (unit == "m")
-                ? 1e2
-                : (unit == "km") ? 1e5 : (unit == "um") ? 1e-4 : (unit == "nm") ? 1e-7 : 1.; // TODO more units
-  return lengthMultiplier;
+
+  const char *lunits[7] = {"nm", "um", "mm", "cm", "dm", "m", "km"};
+  double lm[7] = {1.E-6, 1.E-3, 1., 10., 100., 1000., 1.E6};
+  for (auto i = 0; i < 7; ++i) {
+    if ( unit == lunits[i] )
+      return lm[i];
+  }
+  return 1.;
 }
 
 double Middleware::GetAngleMultiplier(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode const *aDOMNode)

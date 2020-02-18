@@ -16,9 +16,9 @@
 
 namespace vecgeom {
 
-Raytracer::Raytracer(VPlacedVolume const *world, Vector3D<double> const &source_position,
+Raytracer::Raytracer(VPlacedVolume const *world, Vector3D<double> const &screen_position,
                      Vector3D<double> const &up_vector, int img_size_px, int img_size_py, ERTmodel model)
-    : fSize_px(img_size_px), fSize_py(img_size_py), fModel(model), fStart(source_position), fUp(up_vector)
+    : fSize_px(img_size_px), fSize_py(img_size_py), fModel(model), fStart(screen_position), fUp(up_vector)
 {
   SetWorld(world);
 }
@@ -50,25 +50,21 @@ void Raytracer::SetWorld(VPlacedVolume_t world)
   assert(fSize_px * fSize_py > 0 && "SetWorld: image size not set");
 
   // Make sure the image fits the parrallel world view, leaving 20% margin
-  fScale = 0.8 * imgRadius / Min(fSize_px, fSize_py);
+  fScale = 1.2 * imgRadius / Min(fSize_px, fSize_py);
 
   // Project up vector on the source plane
   fDir = vcenter - fStart;
   fDir.Normalize();
-  fRight = Vector3D<double>::Cross(fUp, fDir);
+  fRight = Vector3D<double>::Cross(fDir, fUp);
   fRight.Normalize();
-  fUp = Vector3D<double>::Cross(fDir, fRight);
+  fUp = Vector3D<double>::Cross(fRight, fDir);
   fUp.Normalize();
   fLeftC = fStart - 0.5 * fScale * (fSize_px * fRight + fSize_py * fUp);
 
-  // Calculate light source position for the specular model
-  if (fSourceDir.Mag2() < kTolerance) {
-    // Light position on top-left
-    Vector3D<double> ptstart = fStart - fRight;
-    Vector3D<double> ptend   = fDir;
-    fSourceDir               = ptend - ptstart;
-    fSourceDir.Normalize();
-  }
+  // Light position on top-left
+  fSourceDir = fDir + fUp + fRight;
+  fSourceDir.Normalize();
+
   // Allocate rays
   fNrays                = fSize_px * fSize_py;
   fRays                 = new Ray_t[fNrays];
@@ -103,6 +99,7 @@ void Raytracer::StartRay(int iray)
   Ray_t &ray  = fRays[px * fSize_py + py];
   ray.fPos    = start;
   ray.fDir    = fDir;
+  ray.fColor  = 0xFFFFFFFF;
   ray.fVolume = GlobalLocator::LocateGlobalPoint(fWorld, ray.fPos, *ray.fCrtState, true);
   // Special case when starting point is outside the setup
   int itry = 0;
@@ -120,29 +117,43 @@ void Raytracer::StartRay(int iray)
 
 void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
 {
+  int depth = ray.fNextState->GetLevel();
   if (fModel == kRTspecular) { // specular reflection
     // Calculate normal at the hit point
-    Transformation3D m;
-    ray.fNextState->TopMatrix(m);
-    auto localpoint = m.Transform(ray.fPos);
-    Vector3D<double> norm, lnorm;
-    bool valid = ray.fVolume != nullptr;
+    bool valid = ray.fVolume != nullptr && depth >= fVisDepth;
     if (valid) {
+      Transformation3D m;
+      ray.fNextState->TopMatrix(m);
+      auto localpoint = m.Transform(ray.fPos);
+      Vector3D<double> norm, lnorm;
       ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
       m.InverseTransformDirection(lnorm, norm);
-      Vector3D<double> refl = 2 * norm.Dot(fSourceDir) - fSourceDir;
+      Vector3D<double> refl = fSourceDir - 2 * norm.Dot(fSourceDir) * norm;
       refl.Normalize();
       double calf = -fDir.Dot(refl);
-      if (calf < 0) calf = 0;
-      calf                   = vecCore::math::Pow(calf, fShininess);
-      Color_t specular_color = fLightColor;
-      specular_color *= calf;
+      //if (calf < 0) calf = 0;
+      //calf                   = vecCore::math::Pow(calf, fShininess);
+      auto specular_color = fLightColor;
+      specular_color.MultiplyLightChannel(1. + 0.7 * calf);
       auto object_color = fObjColor;
-      object_color *= (1. - calf);
+      object_color.MultiplyLightChannel(1. + 0.7 * calf);
       ray.fColor = specular_color + object_color;
+      ray.fDone = true;
+      //std::cout << "calf = " << calf << "red=" << (int)ray.fColor.fComp.red << " green=" << (int)ray.fColor.fComp.green
+      //          << " blue=" << (int)ray.fColor.fComp.blue << " alpha=" << (int)ray.fColor.fComp.alpha << std::endl;
     }
-    ray.fDone = true;
   }
+  else 
+  if (fModel == kRTtransparent) { // everything transparent 100% except volumes at visible depth
+    bool valid = ray.fVolume != nullptr && depth == fVisDepth;
+    if (valid) {
+      float transparency = 0.85;
+      auto object_color = fObjColor;
+      object_color *= (1 - transparency);
+      ray.fColor += object_color;
+    }    
+  }
+  if (ray.fVolume == nullptr) ray.fDone = true;
 }
 
 void Raytracer::PropagateRays()
@@ -154,6 +165,19 @@ void Raytracer::PropagateRays()
   while ((remaining = PropagateAllOneStep())) {
     std::cout << "remaining " << remaining << std::endl;
   }
+ 
+  // Write out the image
+  fprintf(stderr, "P3\n%d %d\n255\n", fSize_px, fSize_py);
+  for (int j = 0; j < fSize_py; j++) {
+    for (int i = 0; i < fSize_px; i++) {
+      size_t pixel_index = i * fSize_py + j;
+      auto col = fRays[pixel_index].fColor;
+      int red = 255 * col.Red();
+      int green = 255 * col.Green();
+      int blue = 255 * col.Blue();
+      fprintf(stderr, "%d %d %d\n", red, green, blue);
+    }
+  }  
 }
 
 int Raytracer::PropagateAllOneStep()
@@ -163,7 +187,11 @@ int Raytracer::PropagateAllOneStep()
   // This will have tails since not all rays finish at the same time. The
   // Alternative is to store rays alive in a container/queue
   for (int iray = 0; iray < fNrays; ++iray) {
-    if (fRays[iray].fDone) continue;
+    if (fRays[iray].fDone) {
+      // std::cout << "ray " << iray << ": red=" << (int)fRays[iray].fColor.fComp.red << " green=" << (int)fRays[iray].fColor.fComp.green
+      //          << " blue=" << (int)fRays[iray].fColor.fComp.blue << " alpha=" << (int)fRays[iray].fColor.fComp.alpha << std::endl;
+      continue;
+    }
     count_alive += PropagateOneStep(iray);
   }
   return count_alive;
@@ -182,9 +210,11 @@ int Raytracer::PropagateOneStep(int iray)
   auto nextvol = ray.fVolume;
   double snext = kInfLength;
   int nsmall   = 0;
-  // std::cout << "ray " << iray << " currently in: ";
-  // ray.fCrtState->Print();
+
   while (nextvol == ray.fVolume && nsmall < kMaxTries) {
+    //if (px > 500 && px < 502 && py > 500 && py < 502) {
+    //  std::cout << "ray " << iray << "\n";
+    //}
     snext   = nav->ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
     nextvol = ray.fNextState->Top();
     ray.fPos += (snext + kPush) * ray.fDir;
@@ -195,14 +225,26 @@ int Raytracer::PropagateOneStep(int iray)
     ray.fColor = 0;
     return 0;
   }
+  //if (px > 500 && px < 502 && py > 500 && py < 502) {
+    //ray.fColor = 0xFF0000FF;
+    //std::cout << "ray " << iray << " currently in: ";
+    //ray.fCrtState->Print();
+    //std::cout << " entering at step = " << snext << ": ";
+    //ray.fNextState->Print();
+
+    //ray.fDone = true;
+    //return 0;
+  //}
+
   // Apply the selected RT model
   ray.fNcrossed++;
   ray.fVolume = nextvol;
   if (ray.fVolume == nullptr) ray.fDone = true;
   if (nextvol) ApplyRTmodel(ray, snext);
-  if (!ray.fDone) {
-    ray.fCrtState = ray.fNextState;
-  }
+  auto tmpstate = ray.fCrtState;
+  ray.fCrtState = ray.fNextState;
+  ray.fNextState = tmpstate;
+
   return (ray.fDone) ? 0 : 1;
 }
 
