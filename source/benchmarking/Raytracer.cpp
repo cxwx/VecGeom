@@ -3,12 +3,16 @@
 
 #include "VecGeom/benchmarking/Raytracer.h"
 
-#include "VecGeom/base/Stopwatch.h"
+#include <VecGeom/base/Transformation3D.h>
+#include <VecGeom/base/Stopwatch.h>
 
+#include <VecGeom/navigation/NavigationState.h>
+#include <VecGeom/volumes/PlacedVolume.h>
+#include <VecGeom/management/GeoManager.h>
 #include <VecGeom/navigation/NewSimpleNavigator.h>
-#include "VecGeom/navigation/SimpleABBoxNavigator.h"
-#include "VecGeom/navigation/SimpleABBoxLevelLocator.h"
-#include "VecGeom/navigation/HybridNavigator2.h"
+#include <VecGeom/navigation/SimpleABBoxNavigator.h>
+#include <VecGeom/navigation/SimpleABBoxLevelLocator.h>
+#include <VecGeom/navigation/HybridNavigator2.h>
 
 #ifdef VECGEOM_CUDA_INTERFACE
 #include "VecGeom/backend/cuda/Backend.h"
@@ -21,7 +25,7 @@
 
 namespace vecgeom {
 
-Raytracer::Raytracer(VPlacedVolume const *world, Vector3D<double> const &screen_position,
+Raytracer::Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position,
                      Vector3D<double> const &up_vector, int img_size_px, int img_size_py, ERTmodel model, ERTView view)
     : fScreenPos(screen_position), fUp(up_vector), fSize_px(img_size_px), fSize_py(img_size_py), fModel(model),
       fView(view)
@@ -36,7 +40,7 @@ Raytracer::~Raytracer()
   NavigationState::ReleaseInstance(fVPstate);
 }
 
-void Raytracer::SetWorld(VPlacedVolume_t world)
+void Raytracer::SetWorld(VPlacedVolumePtr_t world)
 {
   using namespace vecCore::math;
 
@@ -112,7 +116,7 @@ void Raytracer::CreateNavigators()
   }
 }
 
-void Raytracer::GenerateVolumePointers(VPlacedVolume_t vol)
+void Raytracer::GenerateVolumePointers(VPlacedVolumePtr_t vol)
 {
   for (auto vd : vol->GetDaughters()) {
 
