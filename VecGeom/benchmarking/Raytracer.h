@@ -10,7 +10,6 @@
 #include <VecGeom/base/Transformation3D.h>
 #include <VecGeom/management/GeoManager.h>
 #include <VecGeom/navigation/NavigationState.h>
-#include <VecGeom/navigation/NewSimpleNavigator.h>
 #include <VecGeom/volumes/PlacedBox.h>
 #include <VecGeom/volumes/PlacedVolume.h>
 #include <VecGeom/volumes/utilities/VolumeUtilities.h>
@@ -272,6 +271,7 @@ public:
 
 private:
   void ApplyRTmodel(Ray_t &ray, double step);
+  void CreateNavigators();
   void GenerateVolumePointers(VPlacedVolume_t vol);
 
 #ifdef VECGEOM_ENABLE_CUDA

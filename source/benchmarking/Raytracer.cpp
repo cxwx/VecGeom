@@ -5,6 +5,11 @@
 
 #include "VecGeom/base/Stopwatch.h"
 
+#include <VecGeom/navigation/NewSimpleNavigator.h>
+#include "VecGeom/navigation/SimpleABBoxNavigator.h"
+#include "VecGeom/navigation/SimpleABBoxLevelLocator.h"
+#include "VecGeom/navigation/HybridNavigator2.h"
+
 #ifdef VECGEOM_CUDA_INTERFACE
 #include "VecGeom/backend/cuda/Backend.h"
 #include "VecGeom/management/CudaManager.h"
@@ -65,6 +70,9 @@ void Raytracer::SetWorld(VPlacedVolume_t world)
   fSourceDir = fDir + fUp + fRight;
   fSourceDir.Normalize();
 
+  // Create navigators (only for CPU case)
+  CreateNavigators();
+
   // Allocate rays
   fNrays                = fSize_px * fSize_py;
   fRays                 = new Ray_t[fNrays];
@@ -76,6 +84,24 @@ void Raytracer::SetWorld(VPlacedVolume_t world)
     fRays[i].fNextState =
         NavigationState::MakeInstanceAt(maxdepth, (void *)(fNavStates + (2 * i + 1) * nav_state_size));
   }
+}
+
+void Raytracer::CreateNavigators()
+{
+// Create all navigators.
+  for (auto &lvol : vecgeom::GeoManager::Instance().GetLogicalVolumesMap()) {
+    if (lvol.second->GetDaughtersp()->size() < 4) {
+      lvol.second->SetNavigator(vecgeom::NewSimpleNavigator<>::Instance());
+    }
+    if (lvol.second->GetDaughtersp()->size() >= 5) {
+      lvol.second->SetNavigator(vecgeom::SimpleABBoxNavigator<>::Instance());
+    }
+    if (lvol.second->GetDaughtersp()->size() >= 10) {
+      lvol.second->SetNavigator(vecgeom::HybridNavigator<>::Instance());
+      vecgeom::HybridManager2::Instance().InitStructure((lvol.second));
+    }
+    lvol.second->SetLevelLocator(vecgeom::SimpleABBoxLevelLocator::GetInstance());
+  } 
 }
 
 void Raytracer::GenerateVolumePointers(VPlacedVolume_t vol)
@@ -206,7 +232,8 @@ int Raytracer::PropagateOneStep(int iray)
   Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
   Ray_t &ray              = fRays[px * fSize_py + py];
 
-  auto nav     = static_cast<NewSimpleNavigator<false> *>(NewSimpleNavigator<false>::Instance());
+  auto nav     = ray.fVolume->GetLogicalVolume()->GetNavigator();
+  //auto nav     = static_cast<NewSimpleNavigator<false> *>(NewSimpleNavigator<false>::Instance());
   auto nextvol = ray.fVolume;
   double snext = kInfLength;
   int nsmall   = 0;
@@ -221,6 +248,7 @@ int Raytracer::PropagateOneStep(int iray)
     nsmall++;
   }
   if (nsmall == kMaxTries) {
+    std::cout << "error for ray " << iray << std::endl;
     ray.fDone  = true;
     ray.fColor = 0;
     return 0;
