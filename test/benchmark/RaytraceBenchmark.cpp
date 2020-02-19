@@ -31,6 +31,9 @@ int main(int argc, char *argv[])
   // RT model as in { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
   OPTION_INT(model, 1);
 
+  // RT view as in { kRTVparallel = 0, kRTVperspective };
+  OPTION_INT(view, 1);
+
   // Screen position in world coordinates
   OPTION_DOUBLE(screenx, -2000);
   OPTION_DOUBLE(screeny, -1500);
@@ -46,13 +49,13 @@ int main(int argc, char *argv[])
   // Light source direction
   OPTION_DOUBLE(ldirx, 0);
   OPTION_DOUBLE(ldiry, 0);
-  OPTION_DOUBLE(ldirz, 0);  
+  OPTION_DOUBLE(ldirz, 0);
   vecgeom::Vector3D<double> ldir(ldirx, ldiry, ldirz);
 
   // Light color, object color (no color per volume yet) - in RGBA chars compressed into an unsigned integer
   OPTION_INT(lightcol, 0xFF0000FF); // red
   OPTION_INT(objcol, 0x0000FFFF);   // blue
-  OPTION_INT(vdepth, 1); // visible depth
+  OPTION_INT(vdepth, 1);            // visible depth
 
 // Try to open the input file
 #ifdef VECGEOM_GDML
@@ -62,10 +65,10 @@ int main(int argc, char *argv[])
 
   auto world = vecgeom::GeoManager::Instance().GetWorld();
   if (!world) return 3;
-  vecgeom::Raytracer raytracer(world, screen_pos, up, px, py, (vecgeom::ERTmodel)model);
+  vecgeom::Raytracer raytracer(world, screen_pos, up, px, py, (vecgeom::ERTmodel)model, (vecgeom::ERTView)view);
   raytracer.SetLightColor(lightcol);
   raytracer.SetObjColor(objcol);
-  //raytracer.SetLightSourceDir(ldir);
+  // raytracer.SetLightSourceDir(ldir);
   raytracer.SetVisDepth(vdepth);
 
   raytracer.PropagateRays();
