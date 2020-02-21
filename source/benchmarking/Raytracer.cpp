@@ -245,7 +245,7 @@ int Raytracer::PropagateOneStep(int iray)
   constexpr int kMaxTries = 10;
   int px                  = iray / fSize_py;
   int py                  = iray - px * fSize_py;
-  Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
+  // Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
   Ray_t &ray              = fRays[px * fSize_py + py];
 
   auto nav = ray.fVolume->GetLogicalVolume()->GetNavigator();
@@ -298,8 +298,8 @@ void Raytracer::GetVolumePointers(std::list<DevicePtr<cuda::VPlacedVolume>> &vol
 {
   CudaManager::Instance().LoadGeometry(GetWorld());
   CudaManager::Instance().Synchronize();
-  for (std::list<VolumePointers>::const_iterator v = fVolumes.begin(); v != fVolumes.end(); ++v) {
-    volumesGpu.push_back(CudaManager::Instance().LookupPlaced(v->Specialized()));
+  for (auto v : fVolumes) {
+    volumesGpu.push_back(CudaManager::Instance().LookupPlaced(v));
   }
 }
 #endif

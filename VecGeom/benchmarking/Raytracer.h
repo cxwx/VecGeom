@@ -9,10 +9,16 @@
 #include <VecGeom/base/Vector3D.h>
 #include <VecGeom/benchmarking/Color.h>
 
+#ifdef VECGEOM_ENABLE_CUDA
+#include <VecGeom/backend/cuda/Interface.h>
+#endif
+
 namespace vecgeom {
 
 enum ERTmodel { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
 enum ERTView { kRTVparallel = 0, kRTVperspective };
+
+VECGEOM_DEVICE_FORWARD_DECLARE(class VPlacedVolume;);
 
 inline namespace VECGEOM_IMPL_NAMESPACE {
 
@@ -37,9 +43,6 @@ struct Ray_t {
 /// In order to run a benchmark, a world volume must be provided to the
 /// raytracer.
 class Raytracer {
-
-public:
-  typedef typename std::vector<std::pair<Vector3D<double>, Vector3D<double>>> RayContainer;
 
 private:
   using VPlacedVolumePtr_t = VPlacedVolume const *;
