@@ -133,10 +133,25 @@ public:
 
   /// \param World volume containing daughters to be benchmarked.
   void SetWorld(VPlacedVolumePtr_t world);
+  
+  // Navigation methods (just temporary here)
+  VPlacedVolumePtr_t LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point,
+                                       NavigationState &path, bool top) const;
+  VPlacedVolumePtr_t LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
+                                                 Vector3D<Precision> const &point, NavigationState &path, bool top) const;
+  VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint,
+                                                         NavigationState &path) const;
+  double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint,
+                                       Vector3D<Precision> const &globaldir, Precision step_limit,
+                                       NavigationState const &in_state,
+                                       NavigationState &out_state) const;
+  int RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view,
+                  Vector3D<double> start, Vector3D<double> dir, Vector3D<double> leftc, Vector3D<double> up, Vector3D<double> right, double scale,
+                  Vector3D<double> source_dir, NavigationState *vpstate);
 
 private:
   void ApplyRTmodel(Ray_t &ray, double step);
-  void CreateNavigators();
+  //void CreateNavigators();
   void GenerateVolumePointers(VPlacedVolumePtr_t vol);
 
 #ifdef VECGEOM_ENABLE_CUDA

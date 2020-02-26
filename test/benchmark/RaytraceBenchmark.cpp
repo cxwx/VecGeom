@@ -2,7 +2,7 @@
  * RaytraceBenchmark.cpp
  *
  *  Created on: Feb 13, 2020
- *      Author: swenzel
+ *      Author: andrei.gheata@cern.ch
  */
 
 #include <VecGeom/base/Vector3D.h>
