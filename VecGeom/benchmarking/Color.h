@@ -76,6 +76,7 @@ union Color_t {
   float Green() const { return kToFloat * fComp.green; }
   float Blue() const { return kToFloat * fComp.blue; }
   float Alpha() const { return kToFloat * fComp.alpha; }
+  int GetColor() const { return fColor; }
 
   void MultiplyLightChannel(float fact)
   {

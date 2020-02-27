@@ -113,45 +113,31 @@ public:
   /// \brief Entry point to propagate all rays
   void PropagateRays();
 
-  /// \brief Initialize a ray and propagate it inside the world volume if needed
-  /// \param px x-axis pixel index
-  /// \param py y-axis pixel index
-  void StartRay(int iray);
-
-  /// \brief Propagate a ray for a single step until next boundary
-  /// \param px x-axis pixel index
-  /// \param py y-axis pixel index
-  /// \return 0 or 1, if ray has stopped or has to continue
-  int PropagateOneStep(int iray);
-
-  /// \brief Propagate all rays for a single step until reaching boundaries
-  /// \return Number of surviving rays
-  int PropagateAllOneStep();
+  Color_t RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view, Vector3D<double> start,
+                      Vector3D<double> dir, Vector3D<double> leftc, Vector3D<double> up, Vector3D<double> right,
+                      double scale, Vector3D<double> source_dir, NavigationState *vpstate);
 
   /// \return World whose daughters are benchmarked.
   VPlacedVolumePtr_t GetWorld() const { return fWorld; }
 
   /// \param World volume containing daughters to be benchmarked.
   void SetWorld(VPlacedVolumePtr_t world);
-  
+
   // Navigation methods (just temporary here)
   VPlacedVolumePtr_t LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point,
                                        NavigationState &path, bool top) const;
   VPlacedVolumePtr_t LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
-                                                 Vector3D<Precision> const &point, NavigationState &path, bool top) const;
+                                                 Vector3D<Precision> const &point, NavigationState &path,
+                                                 bool top) const;
   VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint,
                                                          NavigationState &path) const;
-  double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint,
-                                       Vector3D<Precision> const &globaldir, Precision step_limit,
-                                       NavigationState const &in_state,
+  double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
+                                       Precision step_limit, NavigationState const &in_state,
                                        NavigationState &out_state) const;
-  int RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view,
-                  Vector3D<double> start, Vector3D<double> dir, Vector3D<double> leftc, Vector3D<double> up, Vector3D<double> right, double scale,
-                  Vector3D<double> source_dir, NavigationState *vpstate);
 
 private:
   void ApplyRTmodel(Ray_t &ray, double step);
-  //void CreateNavigators();
+  // void CreateNavigators();
   void GenerateVolumePointers(VPlacedVolumePtr_t vol);
 
 #ifdef VECGEOM_ENABLE_CUDA

@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
   // Light color, object color (no color per volume yet) - in RGBA chars compressed into an unsigned integer
   OPTION_INT(lightcol, 0xFF0000FF); // red
   OPTION_INT(objcol, 0x0000FFFF);   // blue
-  OPTION_INT(vdepth, 1);            // visible depth
+  OPTION_INT(vdepth, 4);            // visible depth
 
 // Try to open the input file
 #ifdef VECGEOM_GDML

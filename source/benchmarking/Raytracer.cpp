@@ -82,12 +82,12 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
   fSourceDir.Normalize();
 
   // Create navigators (only for CPU case)
-  //CreateNavigators();
+  // CreateNavigators();
 
   // Setup viewpoint state
   int maxdepth = GeoManager::Instance().getMaxDepth();
   fVPstate     = NavigationState::MakeInstance(maxdepth);
-  //GlobalLocator::LocateGlobalPoint(fWorld, fStart, *fVPstate, true);
+  // GlobalLocator::LocateGlobalPoint(fWorld, fStart, *fVPstate, true);
   LocateGlobalPoint(fWorld, fStart, *fVPstate, true);
 
   // Allocate rays
@@ -99,6 +99,136 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
     fRays[i].fCrtState = NavigationState::MakeInstanceAt(maxdepth, (void *)(fNavStates + 2 * i * nav_state_size));
     fRays[i].fNextState =
         NavigationState::MakeInstanceAt(maxdepth, (void *)(fNavStates + (2 * i + 1) * nav_state_size));
+  }
+}
+
+Color_t Raytracer::RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view,
+                               Vector3D<double> pstart, Vector3D<double> dir, Vector3D<double> leftc,
+                               Vector3D<double> up, Vector3D<double> right, double scale, Vector3D<double> source_dir,
+                               NavigationState *vpstate)
+{
+  constexpr int kMaxTries      = 10;
+  constexpr double kPush       = 1.e-8;
+  constexpr size_t buffer_size = 2048; // should contain current/next states
+  int maxdepth                 = GeoManager::Instance().getMaxDepth();
+  size_t navstate_size         = NavigationState::SizeOfInstance(maxdepth);
+
+  char navstates_buffer[buffer_size];
+
+  Ray_t ray;
+  ray.fCrtState  = NavigationState::MakeInstanceAt(maxdepth, (void *)(navstates_buffer));
+  ray.fNextState = NavigationState::MakeInstanceAt(maxdepth, (void *)(navstates_buffer + navstate_size));
+
+  Vector3D<double> pos_onscreen = leftc + scale * (px * right + py * up);
+  Vector3D<double> start        = (view == kRTVperspective) ? pstart : pos_onscreen;
+  ray.fPos                      = start;
+  ray.fDir                      = (view == kRTVperspective) ? pos_onscreen - pstart : dir;
+  ray.fDir.Normalize();
+  ray.fColor  = 0xFFFFFFFF; // white
+  ray.fVolume = (view == kRTVperspective) ? vpstate->Top() : LocateGlobalPoint(world, ray.fPos, *ray.fCrtState, true);
+  int itry    = 0;
+  while (!ray.fVolume && itry < kMaxTries) {
+    auto snext = fWorld->DistanceToIn(ray.fPos, ray.fDir);
+    ray.fDone  = snext == kInfLength;
+    if (ray.fDone) return ray.fColor;
+    // Propagate to the world volume (but do not increment the boundary count)
+    ray.fPos += (snext + kPush) * ray.fDir;
+    ray.fVolume = LocateGlobalPoint(fWorld, ray.fPos, *ray.fCrtState, true);
+  }
+  ray.fDone = ray.fVolume == nullptr;
+  if (ray.fDone) return ray.fColor;
+  *ray.fNextState = *ray.fCrtState;
+
+  // Now propagate ray
+  while (!ray.fDone) {
+    auto nextvol = ray.fVolume;
+    double snext = kInfLength;
+    int nsmall   = 0;
+
+    while (nextvol == ray.fVolume && nsmall < kMaxTries) {
+      snext   = ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
+      nextvol = ray.fNextState->Top();
+      ray.fPos += (snext + kPush) * ray.fDir;
+      nsmall++;
+    }
+    if (nsmall == kMaxTries) {
+      std::cout << "error for ray (" << px << ", " << py << ")\n";
+      ray.fDone  = true;
+      ray.fColor = 0;
+      return ray.fColor;
+    }
+
+    // Apply the selected RT model
+    ray.fNcrossed++;
+    ray.fVolume = nextvol;
+    if (ray.fVolume == nullptr) ray.fDone = true;
+    if (nextvol) ApplyRTmodel(ray, snext);
+    auto tmpstate  = ray.fCrtState;
+    ray.fCrtState  = ray.fNextState;
+    ray.fNextState = tmpstate;
+  }
+
+  return ray.fColor;
+}
+
+void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
+{
+  int depth = ray.fNextState->GetLevel();
+  if (fModel == kRTspecular) { // specular reflection
+    // Calculate normal at the hit point
+    bool valid = ray.fVolume != nullptr && depth >= fVisDepth;
+    if (valid) {
+      Transformation3D m;
+      ray.fNextState->TopMatrix(m);
+      auto localpoint = m.Transform(ray.fPos);
+      Vector3D<double> norm, lnorm;
+      ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
+      m.InverseTransformDirection(lnorm, norm);
+      Vector3D<double> refl = fSourceDir - 2 * norm.Dot(fSourceDir) * norm;
+      refl.Normalize();
+      double calf = -fDir.Dot(refl);
+      // if (calf < 0) calf = 0;
+      // calf                   = vecCore::math::Pow(calf, fShininess);
+      auto specular_color = fLightColor;
+      specular_color.MultiplyLightChannel(1. + 0.7 * calf);
+      auto object_color = fObjColor;
+      object_color.MultiplyLightChannel(1. + 0.7 * calf);
+      ray.fColor = specular_color + object_color;
+      ray.fDone  = true;
+      // std::cout << "calf = " << calf << "red=" << (int)ray.fColor.fComp.red << " green=" <<
+      // (int)ray.fColor.fComp.green
+      //          << " blue=" << (int)ray.fColor.fComp.blue << " alpha=" << (int)ray.fColor.fComp.alpha << std::endl;
+    }
+  } else if (fModel == kRTtransparent) { // everything transparent 100% except volumes at visible depth
+    bool valid = ray.fVolume != nullptr && depth == fVisDepth;
+    if (valid) {
+      float transparency = 0.85;
+      auto object_color  = fObjColor;
+      object_color *= (1 - transparency);
+      ray.fColor += object_color;
+    }
+  }
+  if (ray.fVolume == nullptr) ray.fDone = true;
+}
+
+void Raytracer::PropagateRays()
+{
+  // Propagate all rays and write out the image
+  size_t ntot = fSize_px * fSize_py;
+  size_t n10  = 0.1 * ntot;
+  size_t icrt = 0;
+  fprintf(stderr, "P3\n%d %d\n255\n", fSize_px, fSize_py);
+  for (int py = 0; py < fSize_py; py++) {
+    for (int px = 0; px < fSize_px; px++) {
+      if ((icrt % n10) == 0) std::cout << 10 * icrt / n10 << " %\n";
+      auto color =
+          RaytraceOne(px, py, fWorld, fModel, fView, fStart, fDir, fLeftC, fUp, fRight, fScale, fSourceDir, fVPstate);
+      int red   = 255 * color.Red();
+      int green = 255 * color.Green();
+      int blue  = 255 * color.Blue();
+      fprintf(stderr, "%d %d %d\n", red, green, blue);
+      icrt++;
+    }
   }
 }
 
@@ -133,8 +263,10 @@ VPlacedVolume const *Raytracer::LocateGlobalPoint(VPlacedVolume const *vol, Vect
   return candvolume;
 }
 
-VPlacedVolume const *Raytracer::LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
-                                                            Vector3D<Precision> const &point, NavigationState &path, bool top) const
+VPlacedVolume const *Raytracer::LocateGlobalPointExclVolume(VPlacedVolume const *vol,
+                                                            VPlacedVolume const *excludedvolume,
+                                                            Vector3D<Precision> const &point, NavigationState &path,
+                                                            bool top) const
 {
   VPlacedVolume const *candvolume = vol;
   Vector3D<Precision> currentpoint(point);
@@ -194,13 +326,12 @@ VPlacedVolume const *Raytracer::RelocatePointFromPathForceDifferent(Vector3D<Pre
       return LocateGlobalPointExclVolume(currentmother, entryvol, tmp, path, false);
     }
   }
-  return currentmother;  
+  return currentmother;
 }
 
 double Raytracer::ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint,
                                                 Vector3D<Precision> const &globaldir, Precision step_limit,
-                                                NavigationState const &in_state,
-                                                NavigationState &out_state) const
+                                                NavigationState const &in_state, NavigationState &out_state) const
 {
   // calculate local point/dir from global point/dir
   // call the static function for this provided/specialized by the Impl
@@ -227,21 +358,21 @@ double Raytracer::ComputeStepAndPropagatedState(Vector3D<Precision> const &globa
   auto *daughters = lvol->GetDaughtersp();
   auto ndaughters = daughters->size();
   for (decltype(ndaughters) d = 0; d < ndaughters; ++d) {
-    auto daughter = daughters->operator[](d);
+    auto daughter    = daughters->operator[](d);
     double ddistance = daughter->DistanceToIn(localpoint, localdir, step);
 
     // if distance is negative; we are inside that daughter and should relocate
     // unless distance is minus infinity
-    const bool valid = (ddistance < step && !IsInf(ddistance)) &&
-                       !((ddistance <= 0.) && in_state.GetLastExited() == daughter);
+    const bool valid =
+        (ddistance < step && !IsInf(ddistance)) && !((ddistance <= 0.) && in_state.GetLastExited() == daughter);
     hitcandidate = valid ? daughter : hitcandidate;
     step         = valid ? ddistance : step;
   }
 
   // fix state
   bool done;
-  //step = Impl::PrepareOutState(in_state, out_state, step, step_limit, hitcandidate, done);
-    // now we have the candidates and we prepare the out_state
+  // step = Impl::PrepareOutState(in_state, out_state, step, step_limit, hitcandidate, done);
+  // now we have the candidates and we prepare the out_state
   in_state.CopyTo(&out_state);
   done = false;
   if (step == kInfLength && step_limit > 0.) {
@@ -332,191 +463,6 @@ void Raytracer::GenerateVolumePointers(VPlacedVolumePtr_t vol)
     // can check now the property of the conversions of *i
     GenerateVolumePointers(vd);
   }
-}
-
-int Raytracer::RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view,
-                  Vector3D<double> start, Vector3D<double> dir, Vector3D<double> leftc, Vector3D<double> up, Vector3D<double> right, double scale,
-                  Vector3D<double> source_dir, NavigationState *vpstate)
-{
-  constexpr size_t buffer_size = 2048; // should contain current/next states
-  int maxdepth = GeoManager::Instance().getMaxDepth();
-  size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
-
-  char navstates_buffer[buffer_size];
-
-  Ray_t ray;
-  ray.fCrtState = NavigationState::MakeInstanceAt(maxdepth, (void *)(navstates_buffer));
-  ray.fNextState = NavigationState::MakeInstanceAt(maxdepth, (void *)(navstates_buffer + navstate_size));
-
-
-  return 0;
-}
-
-void Raytracer::StartRay(int iray)
-{
-  constexpr int kMaxTries       = 10;
-  constexpr double kPush        = 1.e-8;
-  int px                        = iray / fSize_py;
-  int py                        = iray - px * fSize_py;
-  Vector3D<double> pos_onscreen = fLeftC + fScale * (px * fRight + py * fUp);
-  Vector3D<double> start        = (fView == kRTVperspective) ? fStart : pos_onscreen;
-  // Locate starting point
-  Ray_t &ray = fRays[px * fSize_py + py];
-  ray.fPos   = start;
-  ray.fDir   = (fView == kRTVperspective) ? pos_onscreen - fStart : fDir;
-  ray.fDir.Normalize();
-  ray.fColor  = 0xFFFFFFFF;
-  ray.fVolume = (fView == kRTVperspective) ? fVPstate->Top()
-                                           : /*GlobalLocator::*/LocateGlobalPoint(fWorld, ray.fPos, *ray.fCrtState, true);
-  // Special case when starting point is outside the setup
-  int itry = 0;
-  while (!ray.fVolume && itry < kMaxTries) {
-    auto snext = fWorld->DistanceToIn(ray.fPos, ray.fDir);
-    ray.fDone  = snext == kInfLength;
-    if (ray.fDone) return;
-    // Propagate to the world volume (but do not increment the boundary count)
-    ray.fPos += (snext + kPush) * ray.fDir;
-    ray.fVolume = /*GlobalLocator::*/LocateGlobalPoint(fWorld, ray.fPos, *ray.fCrtState, true);
-  }
-  *ray.fNextState = *ray.fCrtState;
-  ray.fDone       = ray.fVolume == nullptr;
-}
-
-void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
-{
-  int depth = ray.fNextState->GetLevel();
-  if (fModel == kRTspecular) { // specular reflection
-    // Calculate normal at the hit point
-    bool valid = ray.fVolume != nullptr && depth >= fVisDepth;
-    if (valid) {
-      Transformation3D m;
-      ray.fNextState->TopMatrix(m);
-      auto localpoint = m.Transform(ray.fPos);
-      Vector3D<double> norm, lnorm;
-      ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
-      m.InverseTransformDirection(lnorm, norm);
-      Vector3D<double> refl = fSourceDir - 2 * norm.Dot(fSourceDir) * norm;
-      refl.Normalize();
-      double calf = -fDir.Dot(refl);
-      // if (calf < 0) calf = 0;
-      // calf                   = vecCore::math::Pow(calf, fShininess);
-      auto specular_color = fLightColor;
-      specular_color.MultiplyLightChannel(1. + 0.7 * calf);
-      auto object_color = fObjColor;
-      object_color.MultiplyLightChannel(1. + 0.7 * calf);
-      ray.fColor = specular_color + object_color;
-      ray.fDone  = true;
-      // std::cout << "calf = " << calf << "red=" << (int)ray.fColor.fComp.red << " green=" <<
-      // (int)ray.fColor.fComp.green
-      //          << " blue=" << (int)ray.fColor.fComp.blue << " alpha=" << (int)ray.fColor.fComp.alpha << std::endl;
-    }
-  } else if (fModel == kRTtransparent) { // everything transparent 100% except volumes at visible depth
-    bool valid = ray.fVolume != nullptr && depth == fVisDepth;
-    if (valid) {
-      float transparency = 0.85;
-      auto object_color  = fObjColor;
-      object_color *= (1 - transparency);
-      ray.fColor += object_color;
-    }
-  }
-  if (ray.fVolume == nullptr) ray.fDone = true;
-}
-
-void Raytracer::PropagateRays()
-{
-  for (int iray = 0; iray < fNrays; ++iray) {
-    StartRay(iray);
-  }
-  int remaining;
-  while ((remaining = PropagateAllOneStep())) {
-    std::cout << "remaining " << remaining << std::endl;
-  }
-
-  // Write out the image
-  fprintf(stderr, "P3\n%d %d\n255\n", fSize_px, fSize_py);
-  for (int j = 0; j < fSize_py; j++) {
-    for (int i = 0; i < fSize_px; i++) {
-      size_t pixel_index = i * fSize_py + j;
-      auto col           = fRays[pixel_index].fColor;
-      int red            = 255 * col.Red();
-      int green          = 255 * col.Green();
-      int blue           = 255 * col.Blue();
-      fprintf(stderr, "%d %d %d\n", red, green, blue);
-    }
-  }
-}
-
-int Raytracer::PropagateAllOneStep()
-{
-  int count_alive = 0;
-  // dummy strategy: loop over all rays and propagate the ones not done
-  // This will have tails since not all rays finish at the same time. The
-  // Alternative is to store rays alive in a container/queue
-  for (int iray = 0; iray < fNrays; ++iray) {
-    if (fRays[iray].fDone) {
-      // std::cout << "ray " << iray << ": red=" << (int)fRays[iray].fColor.fComp.red << " green=" <<
-      // (int)fRays[iray].fColor.fComp.green
-      //          << " blue=" << (int)fRays[iray].fColor.fComp.blue << " alpha=" << (int)fRays[iray].fColor.fComp.alpha
-      //          << std::endl;
-      continue;
-    }
-    count_alive += PropagateOneStep(iray);
-  }
-  return count_alive;
-}
-
-int Raytracer::PropagateOneStep(int iray)
-{
-  constexpr double kPush  = 1.e-8;
-  constexpr int kMaxTries = 10;
-  int px                  = iray / fSize_py;
-  int py                  = iray - px * fSize_py;
-  // Vector3D<double> start  = fLeftC + fScale * (px * fRight + py * fUp);
-  Ray_t &ray              = fRays[px * fSize_py + py];
-
-  // auto nav = ray.fVolume->GetLogicalVolume()->GetNavigator();
-  // auto nav     = static_cast<NewSimpleNavigator<false> *>(NewSimpleNavigator<false>::Instance());
-  auto nextvol = ray.fVolume;
-  double snext = kInfLength;
-  int nsmall   = 0;
-
-  while (nextvol == ray.fVolume && nsmall < kMaxTries) {
-    // if (px > 500 && px < 502 && py > 500 && py < 502) {
-    //  std::cout << "ray " << iray << "\n";
-    //}
-    snext   = /*nav->*/ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
-    nextvol = ray.fNextState->Top();
-    ray.fPos += (snext + kPush) * ray.fDir;
-    nsmall++;
-  }
-  if (nsmall == kMaxTries) {
-    std::cout << "error for ray " << iray << std::endl;
-    ray.fDone  = true;
-    ray.fColor = 0;
-    return 0;
-  }
-
-  if (px > fSize_px / 2 + 200 && px < fSize_px / 2 + 202 && py > fSize_py / 2 && py < fSize_py / 2 + 2) {
-    ray.fColor = 0xFF0000FF;
-    std::cout << "ray " << iray << " currently in: ";
-    ray.fCrtState->Print();
-    std::cout << " entering at step = " << snext << ": ";
-    ray.fNextState->Print();
-
-    // ray.fDone = true;
-    // return 0;
-  }
-
-  // Apply the selected RT model
-  ray.fNcrossed++;
-  ray.fVolume = nextvol;
-  if (ray.fVolume == nullptr) ray.fDone = true;
-  if (nextvol) ApplyRTmodel(ray, snext);
-  auto tmpstate  = ray.fCrtState;
-  ray.fCrtState  = ray.fNextState;
-  ray.fNextState = tmpstate;
-
-  return (ray.fDone) ? 0 : 1;
 }
 
 #ifdef VECGEOM_CUDA_INTERFACE
