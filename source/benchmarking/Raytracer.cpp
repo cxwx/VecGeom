@@ -26,8 +26,6 @@
 #include <sstream>
 #include <utility>
 
-namespace vecgeom {
-
 Raytracer::Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position,
                      Vector3D<double> const &up_vector, int img_size_px, int img_size_py, ERTmodel model, ERTView view)
     : fScreenPos(screen_position), fUp(up_vector), fSize_px(img_size_px), fSize_py(img_size_py), fModel(model),
@@ -475,5 +473,3 @@ void Raytracer::GetVolumePointers(std::list<DevicePtr<cuda::VPlacedVolume>> &vol
   }
 }
 #endif
-
-} // End namespace vecgeom

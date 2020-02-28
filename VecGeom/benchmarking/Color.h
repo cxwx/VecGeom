@@ -6,8 +6,7 @@
 
 #include <VecGeom/base/Global.h>
 
-namespace vecgeom {
-inline namespace VECGEOM_IMPL_NAMESPACE {
+using namespace vecgeom;
 
 union Color_t {
   static constexpr float kToFloat = 1. / 0xFF;
@@ -19,8 +18,11 @@ union Color_t {
     unsigned char red;
   } fComp;
 
+  VECCORE_ATT_HOST_DEVICE
   Color_t() : fColor(0) {}
+  VECCORE_ATT_HOST_DEVICE
   Color_t(unsigned int col) { fColor = col; }
+  VECCORE_ATT_HOST_DEVICE
   Color_t(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
   {
     fComp.red   = r;
@@ -28,6 +30,7 @@ union Color_t {
     fComp.blue  = b;
     fComp.alpha = a;
   }
+  VECCORE_ATT_HOST_DEVICE
   Color_t(float r, float g, float b, float a)
   {
     fComp.red   = 255 * r;
@@ -36,6 +39,7 @@ union Color_t {
     fComp.alpha = 255 * a;
   }
 
+  VECCORE_ATT_HOST_DEVICE
   Color_t &operator+=(Color_t const &other)
   {
     if ((fComp.alpha == 0) && (other.fComp.alpha == 0)) return *this;
@@ -50,6 +54,7 @@ union Color_t {
     return *this;
   }
 
+  VECCORE_ATT_HOST_DEVICE
   Color_t &operator*=(float val)
   {
     using vecCore::math::Max;
@@ -61,6 +66,7 @@ union Color_t {
     return *this;
   }
 
+  VECCORE_ATT_HOST_DEVICE
   Color_t &operator/=(float val)
   {
     using vecCore::math::Max;
@@ -72,12 +78,17 @@ union Color_t {
     return *this;
   }
 
+  VECCORE_ATT_HOST_DEVICE
   float Red() const { return kToFloat * fComp.red; }
+  VECCORE_ATT_HOST_DEVICE
   float Green() const { return kToFloat * fComp.green; }
+  VECCORE_ATT_HOST_DEVICE
   float Blue() const { return kToFloat * fComp.blue; }
+  VECCORE_ATT_HOST_DEVICE
   float Alpha() const { return kToFloat * fComp.alpha; }
   int GetColor() const { return fColor; }
 
+  VECCORE_ATT_HOST_DEVICE
   void MultiplyLightChannel(float fact)
   {
     float hue, light, satur;
@@ -85,6 +96,7 @@ union Color_t {
     SetHLS(hue, fact * light, satur);
   }
 
+  VECCORE_ATT_HOST_DEVICE
   void GetHLS(float &hue, float &light, float &satur) const
   {
     float rnorm, gnorm, bnorm, msum, mdiff;
@@ -120,6 +132,7 @@ union Color_t {
     if (hue > 360) hue = hue - 360;
   }
 
+  VECCORE_ATT_HOST_DEVICE
   void SetHLS(float hue, float light, float satur)
   {
     float rh, rl, rs, rm1, rm2;
@@ -166,14 +179,13 @@ union Color_t {
   }
 };
 
-VECGEOM_FORCE_INLINE VECCORE_ATT_HOST_DEVICE Color_t operator+(Color_t const &left, Color_t const &right)
+VECCORE_ATT_HOST_DEVICE
+VECGEOM_FORCE_INLINE
+Color_t operator+(Color_t const &left, Color_t const &right)
 {
   Color_t color(left);
   color += right;
   return color;
 }
-
-} // namespace VECGEOM_IMPL_NAMESPACE
-} // namespace vecgeom
 
 #endif // VECGEOM_BENCHMARKING_COLOR_H_

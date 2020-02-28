@@ -74,6 +74,7 @@ private:
 
 public:
   /// \brief dummy constructor, requiring to set the camera parameters and world volume after
+  VECCORE_ATT_HOST_DEVICE
   Raytracer() {}
 
   /// \param world Mother volume containing daughters that will be benchmarked.
@@ -81,18 +82,23 @@ public:
   /// it, normal vector pointing to the origin of the world reference frame \param up_vector the projection of this
   /// vector on the camera plane determines the 'up' direction of the image \param img_size_px image size on X in pixels
   /// \param img_size_py image size on Y in pixels
+  VECCORE_ATT_HOST_DEVICE
   Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position, Vector3D<double> const &up_vector,
             int img_size_px, int img_size_py, ERTmodel model, ERTView view);
 
+  VECCORE_ATT_HOST_DEVICE
   ~Raytracer();
 
   /// \brief set image size in pixels
+  VECCORE_ATT_HOST_DEVICE
   void SetImageSize(int img_size_px, int img_size_py);
 
   /// \brief set raytracing model
+  VECCORE_ATT_HOST_DEVICE
   void SetRTModel(ERTmodel model) { fModel = model; }
 
   /// \brief set raytracing model
+  VECCORE_ATT_HOST_DEVICE
   void SetLightSourceDir(Vector3D<double> const &dir)
   {
     if (fSourceDir.Mag2() > 0) {
@@ -102,42 +108,55 @@ public:
   }
 
   /// \brief set light color
+  VECCORE_ATT_HOST_DEVICE
   void SetLightColor(unsigned int col) { fLightColor = col; }
 
   /// \brief set object color
+  VECCORE_ATT_HOST_DEVICE
   void SetObjColor(unsigned int col) { fObjColor = col; }
 
   /// \brief set visible depth
+  VECCORE_ATT_HOST_DEVICE
   void SetVisDepth(int depth) { fVisDepth = depth; }
 
   /// \brief Entry point to propagate all rays
+  VECCORE_ATT_HOST_DEVICE
   void PropagateRays();
 
+  VECCORE_ATT_HOST_DEVICE
   Color_t RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmodel model, ERTView view, Vector3D<double> start,
                       Vector3D<double> dir, Vector3D<double> leftc, Vector3D<double> up, Vector3D<double> right,
                       double scale, Vector3D<double> source_dir, NavigationState *vpstate);
 
   /// \return World whose daughters are benchmarked.
+  VECCORE_ATT_HOST_DEVICE
   VPlacedVolumePtr_t GetWorld() const { return fWorld; }
 
   /// \param World volume containing daughters to be benchmarked.
+  VECCORE_ATT_HOST_DEVICE
   void SetWorld(VPlacedVolumePtr_t world);
 
   // Navigation methods (just temporary here)
+  VECCORE_ATT_HOST_DEVICE
   VPlacedVolumePtr_t LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point,
                                        NavigationState &path, bool top) const;
+  VECCORE_ATT_HOST_DEVICE
   VPlacedVolumePtr_t LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
                                                  Vector3D<Precision> const &point, NavigationState &path,
                                                  bool top) const;
+  VECCORE_ATT_HOST_DEVICE
   VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint,
                                                          NavigationState &path) const;
+  VECCORE_ATT_HOST_DEVICE
   double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
                                        Precision step_limit, NavigationState const &in_state,
                                        NavigationState &out_state) const;
 
 private:
+  VECCORE_ATT_HOST_DEVICE
   void ApplyRTmodel(Ray_t &ray, double step);
   // void CreateNavigators();
+  VECCORE_ATT_HOST_DEVICE
   void GenerateVolumePointers(VPlacedVolumePtr_t vol);
 
 #ifdef VECGEOM_ENABLE_CUDA
@@ -147,6 +166,7 @@ private:
     *dirZ, double *distances, double *safeties); void RunToOutCuda(double *posX, double *posY, double
     *posZ, double *dirX, double *dirY, double *dirZ, double *distances, double *safeties);
   */
+  VECCORE_ATT_HOST_DEVICE
   void GetVolumePointers(std::list<cxx::DevicePtr<cuda::VPlacedVolume>> &volumesGpu);
 #endif
 };
