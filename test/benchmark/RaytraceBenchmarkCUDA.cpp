@@ -12,8 +12,9 @@
 
 using namespace vecgeom;
 
-void RayTraceCUDA(VPlacedVolume const* const world, int px, int py,
-                  float a, float b, float c, float d, float e, float f);
+#ifdef VECGEOM_ENABLE_CUDA
+void RayTrace(vecgeom::cuda::VPlacedVolume const* const world, int px, int py, int maxdepth, bool use_cuda);
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +22,7 @@ int main(int argc, char *argv[])
    fprintf(stderr, "VecGeom must have GDML and CUDA enabled to run this example.\n");
    return 1;
 #else
-   int nx = 1024;
+   int nx = 2048;
    int ny = 1024;
 
    if (!vgdml::Frontend::Load(argv[1])) {
@@ -31,25 +32,20 @@ int main(int argc, char *argv[])
 
    auto world = GeoManager::Instance().GetWorld();
 
-   Vector3D<double> aMin, aMax;
-	world->Extent(aMin, aMax);
-
    if (!world) {
       fprintf(stderr, "World volume is a null pointer\n");
       return 3;
    }
 
-   Vector3D<double> wmin, wmax, wcenter, wsize;
+   bool use_cuda = true;
+   int maxdepth = GeoManager::Instance().getMaxDepth();
 
-   world->Extent(wmin, wmax);
-   wcenter = 0.5 * (wmax + wmin);
-   wsize   =       (wmax - wmin);
+   if (maxdepth <= 0)
+      fprintf(stderr, "Error, geometry depth is reported as %d\n", maxdepth);
+   else
+      fprintf(stdout, "geometry depth is %d\n", maxdepth);
 
-   std::cout << "world min: " << wmin << ", max: " << wmax << "\n";
-   std::cout << "world center: " << wcenter << ", size: " << wsize << "\n";
-
-   RayTraceCUDA(world, nx, ny, aMin[0], aMin[1], aMin[2],
-                               aMax[0], aMax[1], aMax[2]);
+   RayTrace((vecgeom::cuda::VPlacedVolume*)world, nx, ny, maxdepth, use_cuda);
 
    return 0;
 #endif
