@@ -37,11 +37,19 @@ set(TEST_EXECUTABLES_BENCHMARK
   ${PROJECT_SOURCE_DIR}/test/benchmark/MultiUnionBenchmark.cpp
   ${PROJECT_SOURCE_DIR}/test/benchmark/UnionFlatteningBenchmark.cpp
   ${PROJECT_SOURCE_DIR}/test/benchmark/RaytraceBenchmark.cpp
-  ${PROJECT_SOURCE_DIR}/test/benchmark/RaytraceBenchmarkCUDA.cpp
   ${PROJECT_SOURCE_DIR}/test/globalbenchmarks/NavigationBenchmark.cpp
   ${PROJECT_SOURCE_DIR}/test/benchmark/TestNavIndex.cpp
   PARENT_SCOPE
 )
+
+set(TEST_CUDA_EXECUTABLES_BENCHMARK
+  ${PROJECT_SOURCE_DIR}/test/benchmark/RaytraceBenchmarkCUDA.cpp
+ PARENT_SCOPE
+)
+
+if (CUDA)
+  set(TEST_EXECUTABLES_BENCHMARK ${TEST_EXECUTABLES_BENCHMARK} ${TEST_CUDA_EXECUTABLES_BENCHMARK})
+endif()
 
 #define which ones should be run under ctest
 set(THISCTESTS
