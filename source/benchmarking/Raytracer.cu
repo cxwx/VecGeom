@@ -232,110 +232,48 @@ ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<P
 }
 
 __device__
-void ApplyRTmodel(Ray_t &ray, Precision step, int maxdepth)
-{
-  int fVisDepth       = maxdepth;        ///< Visible geometry depth
-  Color_t fLightColor = 0xFF0000FF;      ///< Light color
-  Color_t fObjColor   = 0x0000FFFF;      ///< Object color
-  ERTmodel fModel     = kRTspecular;     ///< Selected RT model
-  Vector3D<Precision> LightDir(1,1,1);   ///< Light source direction
-  LightDir.Normalize();
-
-  int depth = ray.fNextState->GetLevel();
-  if (fModel == kRTspecular) { // specular reflection
-    // Calculate normal at the hit point
-    bool valid = ray.fVolume != nullptr && depth >= fVisDepth;
-    if (valid) {
-      Transformation3D m;
-      ray.fNextState->TopMatrix(m);
-      auto localpoint = m.Transform(ray.fPos);
-      Vector3D<Precision> norm, lnorm;
-      ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
-      m.InverseTransformDirection(lnorm, norm);
-      Vector3D<Precision> refl = LightDir - 2 * norm.Dot(LightDir) * norm;
-      refl.Normalize();
-      Precision calf = -ray.fDir.Dot(refl);
-      // if (calf < 0) calf = 0;
-      // calf                   = vecCore::math::Pow(calf, fShininess);
-      auto specular_color = fLightColor;
-      specular_color.MultiplyLightChannel(1. + 0.7 * calf);
-      auto object_color = fObjColor;
-      object_color.MultiplyLightChannel(1. + 0.7 * calf);
-      ray.fColor = specular_color + object_color;
-      ray.fDone  = true;
-    }
-  } else if (fModel == kRTtransparent) { // everything transparent 100% except volumes at visible depth
-    bool valid = ray.fVolume != nullptr && depth == fVisDepth;
-    if (valid) {
-      float transparency = 0.85;
-      auto object_color  = fObjColor;
-      object_color *= (1 - transparency);
-      ray.fColor += object_color;
-    }
-  }
-  if (ray.fVolume == nullptr) ray.fDone = true;
-}
-
-__device__
 Color_t raytrace(VPlacedVolume const* const world, Vector3D<Precision> origin, Vector3D<Precision> dir, int maxdepth)
 {
-  constexpr int kMaxTries   = 10;
-  constexpr Precision kPush = 1.e-8;
-
-  constexpr size_t N = 512; // NavigationState::SizeOfInstance(maxdepth);
-
-  char cstate[N];
-  char nstate[N];
-
   Ray_t ray;
+  char cstate[512];
+  char nstate[512];
 
   ray.fPos = origin;
   ray.fDir = dir;
-  ray.fColor  = 0xFFFFFFFF; // white
+  ray.fColor = 0xFFFFFFFF;
   ray.fCrtState  = NavigationState::MakeInstanceAt(maxdepth, (void *)(cstate));
   ray.fNextState = NavigationState::MakeInstanceAt(maxdepth, (void *)(nstate));
+
   ray.fVolume = LocateGlobalPoint(world, ray.fPos, *ray.fCrtState, true);
 
-  int itry    = 0;
-  while (!ray.fVolume && itry < kMaxTries) {
-    auto snext = world->DistanceToIn(ray.fPos, ray.fDir);
-    ray.fDone  = snext == kInfLength;
-    if (ray.fDone) return ray.fColor;
-    // Propagate to the world volume (but do not increment the boundary count)
-    ray.fPos += (snext + kPush) * ray.fDir;
+  do {
+    auto t = world->DistanceToIn(ray.fPos, ray.fDir);
+
+    if (t == kInfLength)
+      return ray.fColor;
+
+    ray.fPos += (t + 1e-7) * ray.fDir;
     ray.fVolume = LocateGlobalPoint(world, ray.fPos, *ray.fCrtState, true);
-  }
-  ray.fDone = ray.fVolume == nullptr;
-  if (ray.fDone) return ray.fColor;
+
+  } while (!ray.fVolume);
+
+  if (!ray.fVolume)
+    return ray.fColor;
+
   *ray.fNextState = *ray.fCrtState;
 
-  // Now propagate ray
-  while (!ray.fDone) {
-    auto nextvol = ray.fVolume;
-    Precision snext = kInfLength;
-    int nsmall   = 0;
+  while (ray.fVolume) {
+    auto t = ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
 
-    while (nextvol == ray.fVolume && nsmall < kMaxTries) {
-      snext   = ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
-      nextvol = ray.fNextState->Top();
-      ray.fPos += (snext + kPush) * ray.fDir;
-      nsmall++;
-    }
-    if (nsmall == kMaxTries) {
-      //std::cout << "error for ray (" << px << ", " << py << ")\n";
-      ray.fDone  = true;
-      ray.fColor = 0;
-      return ray.fColor;
-    }
+    if (t == kInfLength || !ray.fNextState->Top())
+      break;
 
-    // Apply the selected RT model
-    ray.fNcrossed++;
-    ray.fVolume = nextvol;
-    if (ray.fVolume == nullptr) ray.fDone = true;
-    if (nextvol) ApplyRTmodel(ray, snext, maxdepth);
-    auto tmpstate  = ray.fCrtState;
-    ray.fCrtState  = ray.fNextState;
-    ray.fNextState = tmpstate;
+    ray.fPos += (t + 1e-7) * ray.fDir;
+    ray.fVolume = ray.fNextState->Top();
+    *ray.fCrtState = *ray.fNextState;
+
+    if (ray.fVolume->GetDaughters().size() == 0)
+      ray.fColor += 0x0000ff15;
   }
 
   return ray.fColor;
