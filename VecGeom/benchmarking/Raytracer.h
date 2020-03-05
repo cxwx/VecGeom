@@ -175,5 +175,6 @@ private:
 } // End namespace vecgeom
 
 void write_ppm(std::string filename, float* buffer, int px, int py);
+void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth);
 
 #endif // VECGEOM_RAYTRACER_H_

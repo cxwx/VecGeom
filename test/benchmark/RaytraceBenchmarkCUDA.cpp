@@ -13,7 +13,7 @@
 using namespace vecgeom;
 
 #ifdef VECGEOM_ENABLE_CUDA
-void RayTrace(vecgeom::cuda::VPlacedVolume const* const world, int px, int py, int maxdepth, bool use_cuda);
+void RenderGPU(vecgeom::cuda::VPlacedVolume const* const world, int px, int py, int maxdepth);
 #endif
 
 int main(int argc, char *argv[])
@@ -37,15 +37,17 @@ int main(int argc, char *argv[])
       return 3;
    }
 
-   bool use_cuda = true;
-   int maxdepth = GeoManager::Instance().getMaxDepth();
+   int maxdepth = GeoManager::Instance().getMaxDepth() - 1;
 
    if (maxdepth <= 0)
       fprintf(stderr, "Error, geometry depth is reported as %d\n", maxdepth);
    else
       fprintf(stdout, "geometry depth is %d\n", maxdepth);
 
-   RayTrace((vecgeom::cuda::VPlacedVolume*)world, nx, ny, maxdepth, use_cuda);
+   if (argv[2] && strcmp(argv[2], "CPU") == 0)
+     RenderCPU(world, nx, ny, maxdepth);
+   else
+     RenderGPU((vecgeom::cuda::VPlacedVolume*)world, nx, ny, maxdepth);
 
    return 0;
 #endif

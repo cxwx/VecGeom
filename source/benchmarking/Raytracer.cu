@@ -364,8 +364,3 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
 
   checkCudaErrors(cudaFree(buffer));
 }
-
-void RayTrace(VPlacedVolume const* const world, int px, int py, int maxdepth, bool use_cuda)
-{
-  RenderGPU(world, px, py, maxdepth - 1);
-}
