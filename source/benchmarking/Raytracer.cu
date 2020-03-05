@@ -25,7 +25,7 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
 
 #define checkCudaErrors(val) check_cuda((val), #val, __FILE__, __LINE__)
 
-__host__ __device__
+__device__
 VPlacedVolume const*
 LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point, NavigationState &path, bool top)
 {
@@ -57,7 +57,7 @@ LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point, Na
   return candvolume;
 }
 
-__host__ __device__
+__device__
 VPlacedVolume const*
 LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
                             Vector3D<Precision> const &point, NavigationState &path, bool top)
@@ -96,7 +96,7 @@ LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *exclu
   return candvolume;
 }
 
-__host__ __device__
+__device__
 VPlacedVolume const*
 RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavigationState &path)
 {
@@ -124,7 +124,7 @@ RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, Navig
   return currentmother;
 }
 
-__host__ __device__
+__device__
 Precision
 ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
                               Precision step_limit, NavigationState const &in_state, NavigationState &out_state)
@@ -231,7 +231,7 @@ ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<P
   return step;
 }
 
-__host__ __device__
+__device__
 void ApplyRTmodel(Ray_t &ray, Precision step, int maxdepth)
 {
   int fVisDepth       = maxdepth;        ///< Visible geometry depth
@@ -276,7 +276,7 @@ void ApplyRTmodel(Ray_t &ray, Precision step, int maxdepth)
   if (ray.fVolume == nullptr) ray.fDone = true;
 }
 
-__host__ __device__
+__device__
 Color_t raytrace(VPlacedVolume const* const world, Vector3D<Precision> origin, Vector3D<Precision> dir, int maxdepth)
 {
   constexpr int kMaxTries   = 10;
@@ -341,6 +341,7 @@ Color_t raytrace(VPlacedVolume const* const world, Vector3D<Precision> origin, V
   return ray.fColor;
 }
 
+#if 0
 void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
   float *buffer = (float*) malloc(4 * px * py * sizeof(float));
@@ -371,6 +372,7 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 
   free(buffer);
 }
+#endif
 
 __global__
 void RenderKernel(cuda::VPlacedVolume const *const world, int px, int py, float *buffer, int maxdepth)
@@ -427,8 +429,5 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
 
 void RayTrace(VPlacedVolume const* const world, int px, int py, int maxdepth, bool use_cuda)
 {
-  if (use_cuda)
-    RenderGPU(world, px, py, maxdepth - 1);
-  else
-    RenderCPU(world, px, py, maxdepth - 1);
+  RenderGPU(world, px, py, maxdepth - 1);
 }
