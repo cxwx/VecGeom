@@ -174,4 +174,6 @@ private:
 } // End namespace VECGEOM_IMPL_NAMESPACE
 } // End namespace vecgeom
 
+void write_ppm(std::string filename, float* buffer, int px, int py);
+
 #endif // VECGEOM_RAYTRACER_H_

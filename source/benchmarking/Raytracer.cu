@@ -341,23 +341,6 @@ Color_t raytrace(VPlacedVolume const* const world, Vector3D<Precision> origin, V
   return ray.fColor;
 }
 
-void write_image(std::string filename, float* buffer, int px, int py)
-{
-  std::ofstream image(filename);
-
-  image << "P3\n" << px << " " << py << "\n255\n";
-
-  for (int j = py - 1; j >= 0; j--) {
-    for (int i = 0; i < px; i++) {
-      int idx = 4 * (j * px + i);
-      int ir = int(255.99 * buffer[idx + 0]);
-      int ig = int(255.99 * buffer[idx + 1]);
-      int ib = int(255.99 * buffer[idx + 2]);
-      image << ir << " " << ig << " " << ib << "\n";
-    }
-  }
-}
-
 void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
   float *buffer = (float*) malloc(4 * px * py * sizeof(float));
@@ -384,7 +367,7 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
     }
   }
 
-  write_image("output.ppm", buffer, px, py);
+  write_ppm("output.ppm", buffer, px, py);
 
   free(buffer);
 }
@@ -437,7 +420,7 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-  write_image("output.ppm", buffer, px, py);
+  write_ppm("output.ppm", buffer, px, py);
 
   checkCudaErrors(cudaFree(buffer));
 }

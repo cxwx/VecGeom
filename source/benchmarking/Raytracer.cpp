@@ -24,6 +24,7 @@
 
 #include <random>
 #include <sstream>
+#include <fstream>
 #include <utility>
 
 Raytracer::Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position,
@@ -473,3 +474,20 @@ void Raytracer::GetVolumePointers(std::list<DevicePtr<cuda::VPlacedVolume>> &vol
   }
 }
 #endif
+
+void write_ppm(std::string filename, float* buffer, int px, int py)
+{
+  std::ofstream image(filename);
+
+  image << "P3\n" << px << " " << py << "\n255\n";
+
+  for (int j = py - 1; j >= 0; j--) {
+    for (int i = 0; i < px; i++) {
+      int idx = 4 * (j * px + i);
+      int ir = int(255.99 * buffer[idx + 0]);
+      int ig = int(255.99 * buffer[idx + 1]);
+      int ib = int(255.99 * buffer[idx + 2]);
+      image << ir << " " << ig << " " << ib << "\n";
+    }
+  }
+}
