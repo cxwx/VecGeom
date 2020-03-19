@@ -34,6 +34,9 @@ int main(int argc, char *argv[])
   // RT view as in { kRTVparallel = 0, kRTVperspective };
   OPTION_INT(view, 1);
 
+  // zoom w.r.t to the default view mode
+  OPTION_DOUBLE(zoom, 1);
+
   // Screen position in world coordinates
   OPTION_DOUBLE(screenx, -2000);
   OPTION_DOUBLE(screeny, -1500);
@@ -65,7 +68,7 @@ int main(int argc, char *argv[])
 
   auto world = vecgeom::GeoManager::Instance().GetWorld();
   if (!world) return 3;
-  vecgeom::Raytracer raytracer(world, screen_pos, up, px, py, (vecgeom::ERTmodel)model, (vecgeom::ERTView)view);
+  vecgeom::Raytracer raytracer(world, screen_pos, up, px, py, zoom, (vecgeom::ERTmodel)model, (vecgeom::ERTView)view);
   raytracer.SetLightColor(lightcol);
   raytracer.SetObjColor(objcol);
   // raytracer.SetLightSourceDir(ldir);

@@ -6,8 +6,7 @@
 
 #include <VecGeom/base/Global.h>
 
-using namespace vecgeom;
-
+namespace vecgeom {
 union Color_t {
   static constexpr float kToFloat = 1. / 0xFF;
   unsigned int fColor; // color representation as unsigned integer
@@ -187,5 +186,6 @@ Color_t operator+(Color_t const &left, Color_t const &right)
   color += right;
   return color;
 }
+} // End namespace vecgeom
 
 #endif // VECGEOM_BENCHMARKING_COLOR_H_

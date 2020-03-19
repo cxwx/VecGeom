@@ -49,6 +49,7 @@ private:
 
   double fScale     = 0;                 ///< Scaling from pixels to world coordinates
   double fShininess = 1.;                ///< Shininess exponent in the specular model
+  double fZoom      = 1.;                ///< Zoom with respect to the default view
   Vector3D<double> fSourceDir;           ///< Light source direction
   Vector3D<double> fStart;               ///< Eye position in perspectove mode
   Vector3D<double> fScreenPos;           ///< Screen position
@@ -84,7 +85,7 @@ public:
   /// \param img_size_py image size on Y in pixels
   VECCORE_ATT_HOST_DEVICE
   Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position, Vector3D<double> const &up_vector,
-            int img_size_px, int img_size_py, ERTmodel model, ERTView view);
+            int img_size_px, int img_size_py, double zoom, ERTmodel model, ERTView view);
 
   VECCORE_ATT_HOST_DEVICE
   ~Raytracer();
@@ -156,8 +157,8 @@ private:
   VECCORE_ATT_HOST_DEVICE
   void ApplyRTmodel(Ray_t &ray, double step);
   // void CreateNavigators();
-  VECCORE_ATT_HOST_DEVICE
-  void GenerateVolumePointers(VPlacedVolumePtr_t vol);
+  //VECCORE_ATT_HOST_DEVICE
+  //void GenerateVolumePointers(VPlacedVolumePtr_t vol);
 
 #ifdef VECGEOM_ENABLE_CUDA
   /*
@@ -165,16 +166,17 @@ private:
     void RunToInCuda(double *posX, double *posY, double *posZ, double *dirX, double *dirY, double
     *dirZ, double *distances, double *safeties); void RunToOutCuda(double *posX, double *posY, double
     *posZ, double *dirX, double *dirY, double *dirZ, double *distances, double *safeties);
-  */
   VECCORE_ATT_HOST_DEVICE
   void GetVolumePointers(std::list<cxx::DevicePtr<cuda::VPlacedVolume>> &volumesGpu);
+  */
 #endif
 };
 
 } // End namespace VECGEOM_IMPL_NAMESPACE
-} // End namespace vecgeom
 
 void write_ppm(std::string filename, float* buffer, int px, int py);
 void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth);
+
+} // End namespace vecgeom
 
 #endif // VECGEOM_RAYTRACER_H_

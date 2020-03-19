@@ -27,9 +27,12 @@
 #include <fstream>
 #include <utility>
 
+namespace vecgeom {
+inline namespace VECGEOM_IMPL_NAMESPACE {
+
 Raytracer::Raytracer(VPlacedVolumePtr_t world, Vector3D<double> const &screen_position,
-                     Vector3D<double> const &up_vector, int img_size_px, int img_size_py, ERTmodel model, ERTView view)
-    : fScreenPos(screen_position), fUp(up_vector), fSize_px(img_size_px), fSize_py(img_size_py), fModel(model),
+                     Vector3D<double> const &up_vector, int img_size_px, int img_size_py, double zoom, ERTmodel model, ERTView view)
+    : fZoom(zoom), fScreenPos(screen_position), fUp(up_vector), fSize_px(img_size_px), fSize_py(img_size_py), fModel(model),
       fView(view)
 {
   SetWorld(world);
@@ -49,7 +52,7 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
   // fVolumes.clear();
   fWorld = world;
   if (!world) return;
-  GenerateVolumePointers(fWorld);
+  //GenerateVolumePointers(fWorld);
   if (fVerbosity > 2) {
     // printf("Found %lu volumes in world volume to be used for benchmarking.\n", fVolumes.size());
   }
@@ -60,16 +63,20 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
   vsize   = 0.5 * (aMax - aMin);
 
   double imgRadius = vsize.Mag();
+  std::cout << *(fWorld->GetLogicalVolume()->GetUnplacedVolume()) << std::endl;
+  std::cout << "vcenter =  " << vcenter << "   vsize = " << vsize << "  ingRadius = " << imgRadius << std::endl;
   assert(fSize_px * fSize_py > 0 && "SetWorld: image size not set");
 
   // Make sure the image fits the parrallel world view, leaving 20% margin
-  fScale = 1.2 * imgRadius / Min(fSize_px, fSize_py);
-  if (fView == kRTVperspective) fScale *= 0.5;
+  constexpr double d0 = 1.;
+  double dd = (vcenter - fScreenPos).Mag();
+  fScale = 2.1 * imgRadius / Min(fSize_px, fSize_py) / fZoom;
+  if (fView == kRTVperspective) fScale *= d0 / (dd + d0);
 
   // Project up vector on the source plane
   fDir   = vcenter - fScreenPos;
-  fStart = fScreenPos - fDir;
   fDir.Normalize();
+  fStart = fScreenPos - d0 * fDir;
   fRight = Vector3D<double>::Cross(fDir, fUp);
   fRight.Normalize();
   fUp = Vector3D<double>::Cross(fRight, fDir);
@@ -84,7 +91,7 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
   // CreateNavigators();
 
   // Setup viewpoint state
-  int maxdepth = GeoManager::Instance().getMaxDepth();
+  int maxdepth = 10; /*GeoManager::Instance().getMaxDepth();*/
   fVPstate     = NavigationState::MakeInstance(maxdepth);
   // GlobalLocator::LocateGlobalPoint(fWorld, fStart, *fVPstate, true);
   LocateGlobalPoint(fWorld, fStart, *fVPstate, true);
@@ -109,7 +116,7 @@ Color_t Raytracer::RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmode
   constexpr int kMaxTries      = 10;
   constexpr double kPush       = 1.e-8;
   constexpr size_t buffer_size = 2048; // should contain current/next states
-  int maxdepth                 = GeoManager::Instance().getMaxDepth();
+  int maxdepth                 = 10; /*GeoManager::Instance().getMaxDepth();*/
   size_t navstate_size         = NavigationState::SizeOfInstance(maxdepth);
 
   char navstates_buffer[buffer_size];
@@ -151,7 +158,7 @@ Color_t Raytracer::RaytraceOne(int px, int py, VPlacedVolumePtr_t world, ERTmode
       nsmall++;
     }
     if (nsmall == kMaxTries) {
-      std::cout << "error for ray (" << px << ", " << py << ")\n";
+      //std::cout << "error for ray (" << px << ", " << py << ")\n";
       ray.fDone  = true;
       ray.fColor = 0;
       return ray.fColor;
@@ -183,15 +190,15 @@ void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
       Vector3D<double> norm, lnorm;
       ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
       m.InverseTransformDirection(lnorm, norm);
-      Vector3D<double> refl = fSourceDir - 2 * norm.Dot(fSourceDir) * norm;
+      Vector3D<double> refl = ray.fDir - 2 * norm.Dot(ray.fDir) * norm;
       refl.Normalize();
-      double calf = -fDir.Dot(refl);
+      double calf = -fSourceDir.Dot(refl);
       // if (calf < 0) calf = 0;
       // calf                   = vecCore::math::Pow(calf, fShininess);
       auto specular_color = fLightColor;
-      specular_color.MultiplyLightChannel(1. + 0.7 * calf);
+      specular_color.MultiplyLightChannel(1. + 0.5 * calf);
       auto object_color = fObjColor;
-      object_color.MultiplyLightChannel(1. + 0.7 * calf);
+      object_color.MultiplyLightChannel(1. + 0.5 * calf);
       ray.fColor = specular_color + object_color;
       ray.fDone  = true;
       // std::cout << "calf = " << calf << "red=" << (int)ray.fColor.fComp.red << " green=" <<
@@ -213,22 +220,29 @@ void Raytracer::ApplyRTmodel(Ray_t &ray, double step)
 void Raytracer::PropagateRays()
 {
   // Propagate all rays and write out the image
+#ifndef VECGEOM_ENABLE_CUDA
   size_t ntot = fSize_px * fSize_py;
+  float *buffer = (float*) malloc(4 * ntot * sizeof(float));
   size_t n10  = 0.1 * ntot;
   size_t icrt = 0;
-  fprintf(stderr, "P3\n%d %d\n255\n", fSize_px, fSize_py);
+  //fprintf(stderr, "P3\n%d %d\n255\n", fSize_px, fSize_py);
   for (int py = 0; py < fSize_py; py++) {
     for (int px = 0; px < fSize_px; px++) {
       if ((icrt % n10) == 0) std::cout << 10 * icrt / n10 << " %\n";
-      auto color =
+      int pixel_index = 4 * (py * fSize_px + px);
+      auto pixel_color =
           RaytraceOne(px, py, fWorld, fModel, fView, fStart, fDir, fLeftC, fUp, fRight, fScale, fSourceDir, fVPstate);
-      int red   = 255 * color.Red();
-      int green = 255 * color.Green();
-      int blue  = 255 * color.Blue();
-      fprintf(stderr, "%d %d %d\n", red, green, blue);
+      buffer[pixel_index + 0] = pixel_color.Red();
+      buffer[pixel_index + 1] = pixel_color.Green();
+      buffer[pixel_index + 2] = pixel_color.Blue();
+      buffer[pixel_index + 3] = 1.0f;
+      //fprintf(stderr, "%d %d %d\n", red, green, blue);
       icrt++;
     }
   }
+  write_ppm("output.ppm", buffer, fSize_px, fSize_py);
+  free(buffer);
+#endif
 }
 
 VPlacedVolume const *Raytracer::LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point,
@@ -452,7 +466,6 @@ void Raytracer::CreateNavigators()
     lvol.second->SetLevelLocator(vecgeom::SimpleABBoxLevelLocator::GetInstance());
   }
 }
-*/
 
 void Raytracer::GenerateVolumePointers(VPlacedVolumePtr_t vol)
 {
@@ -474,6 +487,8 @@ void Raytracer::GetVolumePointers(std::list<DevicePtr<cuda::VPlacedVolume>> &vol
   }
 }
 #endif
+*/
+} // End namespace VECGEOM_IMPL_NAMESPACE
 
 void write_ppm(std::string filename, float* buffer, int px, int py)
 {
@@ -775,3 +790,4 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 
   free(buffer);
 }
+} // End namespace vecgeom
