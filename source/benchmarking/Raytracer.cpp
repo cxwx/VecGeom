@@ -63,8 +63,8 @@ void Raytracer::SetWorld(VPlacedVolumePtr_t world)
   vsize   = 0.5 * (aMax - aMin);
 
   double imgRadius = vsize.Mag();
-  std::cout << *(fWorld->GetLogicalVolume()->GetUnplacedVolume()) << std::endl;
-  std::cout << "vcenter =  " << vcenter << "   vsize = " << vsize << "  ingRadius = " << imgRadius << std::endl;
+  //std::cout << *(fWorld->GetLogicalVolume()->GetUnplacedVolume()) << std::endl;
+  //std::cout << "vcenter =  " << vcenter << "   vsize = " << vsize << "  ingRadius = " << imgRadius << std::endl;
   assert(fSize_px * fSize_py > 0 && "SetWorld: image size not set");
 
   // Make sure the image fits the parrallel world view, leaving 20% margin
@@ -490,6 +490,7 @@ void Raytracer::GetVolumePointers(std::list<DevicePtr<cuda::VPlacedVolume>> &vol
 */
 } // End namespace VECGEOM_IMPL_NAMESPACE
 
+#ifndef VECGEOM_CUDA_INTERFACE
 void write_ppm(std::string filename, float* buffer, int px, int py)
 {
   std::ofstream image(filename);
@@ -506,6 +507,7 @@ void write_ppm(std::string filename, float* buffer, int px, int py)
     }
   }
 }
+#endif
 
 /// COPY OF GPU CODE COMES BELOW
 /// This is needed to have the code in the cxx namespace,

@@ -68,7 +68,7 @@ private:
   ERTView fView       = kRTVperspective; ///< View type
 
   VPlacedVolumePtr_t fWorld = nullptr;    ///< World volume
-  std::list<VPlacedVolumePtr_t> fVolumes; ///< List of physical volumes (to migrate to GPU)
+  //std::list<VPlacedVolumePtr_t> fVolumes; ///< List of physical volumes (to migrate to GPU)
   NavigationState *fVPstate = nullptr;    ///< Viewpoint state
   char *fNavStates          = nullptr;    ///< Actual location in memory of the navigation states
   Ray_t *fRays              = nullptr;    ///< Data block for rays
