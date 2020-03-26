@@ -65,6 +65,8 @@ struct RaytracerData_t {
 
   VPlacedVolumePtr_t fWorld = nullptr; ///< World volume
   NavigationState *fVPstate = nullptr; ///< Navigation state corresponding to the viewpoint
+
+  void Print();
 };
 
 /// \brief Raytracing a logical volume content using a given model

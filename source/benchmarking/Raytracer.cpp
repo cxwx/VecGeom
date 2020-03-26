@@ -30,6 +30,16 @@
 namespace vecgeom {
 inline namespace VECGEOM_IMPL_NAMESPACE {
 
+void RaytracerData_t::Print()
+{
+  printf("  screen_pos(%g, %g, %g) screen_size(%d, %d)\n", fScreenPos[0], fScreenPos[1], fScreenPos[2], fSize_px, fSize_py);
+  printf("  light_dir(%g, %g, %g) light_color(0x%08x) obj_color(0x%08x)\n", fSourceDir[0], fSourceDir[1], fSourceDir[2], fLightColor.fColor, fObjColor.fColor);
+  printf("  zoom_factor(%g) visible_depth(%d/%d) rt_model(%d) rt_view(%d)\n", fZoom, fVisDepth, fMaxDepth, (int)fModel, (int)fView);
+  printf("  world(%s) viewpoint_state: ", fWorld->GetName());
+  if (fVPstate) fVPstate->Print();
+  else printf("nullptr\n");
+}
+
 namespace Raytracer {
 
 void InitializeModel(VPlacedVolumePtr_t world, RaytracerData_t &rtdata)

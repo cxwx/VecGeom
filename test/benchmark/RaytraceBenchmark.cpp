@@ -76,6 +76,7 @@ int main(int argc, char *argv[])
   rtdata.fMaxDepth   = GeoManager::Instance().getMaxDepth();
 
   Raytracer::InitializeModel(world, rtdata);
+  rtdata.Print();
 
   Raytracer::PropagateRays(rtdata);
   return 0;

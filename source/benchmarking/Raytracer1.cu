@@ -314,9 +314,7 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 #endif
 
 __global__
-void RenderKernel(cuda::VPlacedVolume const *const gpu_world, cuda::NavigationState *vpstate, cuda::Vector3D<double> viewplane, cuda::Vector3D<double> up,
-                  int px, int py, double scale, vecgeom::ERTmodel model, vecgeom::ERTView view,
-      float *buffer, int maxdepth)
+void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata)
 {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -331,14 +329,14 @@ void RenderKernel(cuda::VPlacedVolume const *const gpu_world, cuda::NavigationSt
   // model view hard-coded for debugging
   // traceML size is 2200,2200,6200, centered at 0,0,0
   //printf("Creating instance of GPU ray-tracer\n");
-  vpstate->Print();
-  Raytracer rt(gpu_world, viewplane, up, px, py, scale, model, view);
+  rtdata.fWorld   = gpu_world;
+  rtdata.Print();
 
   Vector3D<Precision> origin = {0, -7000, 0};
   Vector3D<Precision> direction = {v - 0.5, 1.9, 2*u - 1};
   direction.Normalize();
 
-  Color_t pixel_color = raytrace(gpu_world, origin, direction, maxdepth);
+  Color_t pixel_color = raytrace(gpu_world, origin, direction, rtdata.fMaxDepth);
 
   buffer[pixel_index + 0] = pixel_color.Red();
   buffer[pixel_index + 1] = pixel_color.Green();
@@ -356,11 +354,6 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
 
   vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
   vecgeom::cxx::CudaManager::Instance().Synchronize();
-
-  size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
-  char *vpstate_buffer = nullptr;
-  checkCudaErrors(cudaMallocManaged((void **)&vpstate_buffer, navstate_size));
-  auto vpstate  = NavigationState::MakeInstanceAt(maxdepth, (void *)(vpstate_buffer));
   
   auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
 
@@ -375,12 +368,36 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   ERTmodel model = kRTspecular;
   ERTView view = kRTVperspective;
 
-  //Raytracer rt(world, viewplane, up, px, py, scale, model, view);
+  size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
+  char *vpstate_buffer = nullptr;
+  checkCudaErrors(cudaMallocManaged((void **)&vpstate_buffer, navstate_size));
+  auto vpstate  = NavigationState::MakeInstanceAt(maxdepth, (void *)(vpstate_buffer));
+  
+  // We should be able to use the CPU world to locate the point, then update the navigation state located in the shared mem
   Raytracer::LocateGlobalPoint(world, viewplane, *vpstate, true);
   vpstate->Print();
   
+  // Create the raytracer data object
+  RaytracerData_t rtdata;
+  rtdata.fScreenPos.Set(0, -7000, 0);
+  rtdata.fUp.Set(1, 0, 0);
+  rtdata.fZoom       = 1.;
+  rtdata.fModel      = kRTspecular;
+  rtdata.fView       = kRTVperspective;
+  rtdata.fSize_px    = px;
+  rtdata.fSize_py    = py;
+  rtdata.fLightColor = 0xFF0000FF;
+  rtdata.fObjColor   = 0x0000FFFF;
+  rtdata.fVisDepth   = 4;
+  rtdata.fMaxDepth   = maxdepth;
+
+  Raytracer::InitializeModel(world, rtdata);
+  rtdata.Print();
+  // Fill in the pointers to the GPU world and viewplane state
+  rtdata.fVPstate = vpstate;
+
   dim3 blocks(px / 8 + 1, py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(gpu_world, vpstate, viewplane, up, px, py, scale, model, view, buffer, maxdepth);
+  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
