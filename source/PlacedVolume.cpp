@@ -132,10 +132,13 @@ bool VPlacedVolume::Normal(Vector3D<Precision> const & /*point*/, Vector3D<Preci
 }
 
 VECCORE_ATT_HOST_DEVICE
-void VPlacedVolume::Extent(Vector3D<Precision> & /* min */, Vector3D<Precision> & /* max */) const
+void VPlacedVolume::Extent(Vector3D<Precision> &min, Vector3D<Precision> &max) const
 {
 #ifndef VECCORE_CUDA
+  (void)min; (void)max;
   throw std::runtime_error("Extent() not implemented for this shape type.");
+#else
+  GetUnplacedVolume()->Extent(min, max);
 #endif
 }
 

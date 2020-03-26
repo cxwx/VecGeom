@@ -41,19 +41,12 @@ int main(int argc, char *argv[])
   OPTION_DOUBLE(screenx, -2000);
   OPTION_DOUBLE(screeny, -1500);
   OPTION_DOUBLE(screenz, -600);
-  vecgeom::Vector3D<double> screen_pos(screenx, screeny, screenz);
 
   // Up vector (no need to be normalized)
   OPTION_DOUBLE(upx, 0);
   OPTION_DOUBLE(upy, 1);
   OPTION_DOUBLE(upz, 0);
   vecgeom::Vector3D<double> up(upx, upy, upz);
-
-  // Light source direction
-  OPTION_DOUBLE(ldirx, 0);
-  OPTION_DOUBLE(ldiry, 0);
-  OPTION_DOUBLE(ldirz, 0);
-  vecgeom::Vector3D<double> ldir(ldirx, ldiry, ldirz);
 
   // Light color, object color (no color per volume yet) - in RGBA chars compressed into an unsigned integer
   OPTION_INT(lightcol, 0xFF0000FF); // red
@@ -66,14 +59,24 @@ int main(int argc, char *argv[])
   if (!load) return 2;
 #endif
 
-  auto world = vecgeom::GeoManager::Instance().GetWorld();
+  auto world = GeoManager::Instance().GetWorld();
   if (!world) return 3;
-  vecgeom::Raytracer raytracer(world, screen_pos, up, px, py, zoom, (vecgeom::ERTmodel)model, (vecgeom::ERTView)view);
-  raytracer.SetLightColor(lightcol);
-  raytracer.SetObjColor(objcol);
-  // raytracer.SetLightSourceDir(ldir);
-  raytracer.SetVisDepth(vdepth);
+  RaytracerData_t rtdata;
 
-  raytracer.PropagateRays();
+  rtdata.fScreenPos.Set(screenx, screeny, screenz);
+  rtdata.fUp.Set(upx, upy, upz);
+  rtdata.fZoom       = zoom;
+  rtdata.fModel      = (ERTmodel)model;
+  rtdata.fView       = (ERTView)view;
+  rtdata.fSize_px    = px;
+  rtdata.fSize_py    = py;
+  rtdata.fLightColor = lightcol;
+  rtdata.fObjColor   = objcol;
+  rtdata.fVisDepth   = vdepth;
+  rtdata.fMaxDepth   = GeoManager::Instance().getMaxDepth();
+
+  Raytracer::InitializeModel(world, rtdata);
+
+  Raytracer::PropagateRays(rtdata);
   return 0;
 }

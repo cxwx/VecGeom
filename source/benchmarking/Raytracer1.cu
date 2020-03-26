@@ -8,6 +8,7 @@
 #include <VecGeom/management/CudaManager.h>
 #include <VecGeom/navigation/NavigationState.h>
 #include <VecGeom/volumes/PlacedVolume.h>
+#include <VecGeom/benchmarking/Raytracer.h>
 
 #include <cassert>
 #include <cstdio>
@@ -313,7 +314,9 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 #endif
 
 __global__
-void RenderKernel(cuda::VPlacedVolume const *const world, int px, int py, float *buffer, int maxdepth)
+void RenderKernel(cuda::VPlacedVolume const *const gpu_world, cuda::NavigationState *vpstate, cuda::Vector3D<double> viewplane, cuda::Vector3D<double> up,
+                  int px, int py, double scale, vecgeom::ERTmodel model, vecgeom::ERTView view,
+      float *buffer, int maxdepth)
 {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -327,11 +330,15 @@ void RenderKernel(cuda::VPlacedVolume const *const world, int px, int py, float 
 
   // model view hard-coded for debugging
   // traceML size is 2200,2200,6200, centered at 0,0,0
+  //printf("Creating instance of GPU ray-tracer\n");
+  vpstate->Print();
+  Raytracer rt(gpu_world, viewplane, up, px, py, scale, model, view);
+
   Vector3D<Precision> origin = {0, -7000, 0};
   Vector3D<Precision> direction = {v - 0.5, 1.9, 2*u - 1};
   direction.Normalize();
 
-  Color_t pixel_color = raytrace(world, origin, direction, maxdepth);
+  Color_t pixel_color = raytrace(gpu_world, origin, direction, maxdepth);
 
   buffer[pixel_index + 0] = pixel_color.Red();
   buffer[pixel_index + 1] = pixel_color.Green();
@@ -341,12 +348,20 @@ void RenderKernel(cuda::VPlacedVolume const *const world, int px, int py, float 
 
 void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
+  using Raytracer = cuda::Raytracer;
+  using Vector3 = cuda::Vector3D<double>;
+
   float *buffer = nullptr;
   checkCudaErrors(cudaMallocManaged((void **)&buffer, 4 * sizeof(float) * px * py));
 
   vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
   vecgeom::cxx::CudaManager::Instance().Synchronize();
 
+  size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
+  char *vpstate_buffer = nullptr;
+  checkCudaErrors(cudaMallocManaged((void **)&vpstate_buffer, navstate_size));
+  auto vpstate  = NavigationState::MakeInstanceAt(maxdepth, (void *)(vpstate_buffer));
+  
   auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
 
   if (!gpu_world) {
@@ -354,8 +369,18 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
     exit(1);
   }
 
+  // MainKernel<<<1,1>>>(gpu_world, px, py, buffer, maxdepth);
+  Vector3 viewplane(0,-7000,0), up(1, 0, 0);
+  double scale = 1.;
+  ERTmodel model = kRTspecular;
+  ERTView view = kRTVperspective;
+
+  //Raytracer rt(world, viewplane, up, px, py, scale, model, view);
+  Raytracer::LocateGlobalPoint(world, viewplane, *vpstate, true);
+  vpstate->Print();
+  
   dim3 blocks(px / 8 + 1, py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(gpu_world, px, py, buffer, maxdepth);
+  RenderKernel<<<blocks, threads>>>(gpu_world, vpstate, viewplane, up, px, py, scale, model, view, buffer, maxdepth);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
