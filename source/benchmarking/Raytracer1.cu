@@ -314,23 +314,23 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 #endif
 
 __global__
-void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata)
+void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata, float *buffer)
 {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
 
-  if ((i >= px) || (j >= py)) return;
+  if ((i >= rtdata.fSize_px) || (j >= rtdata.fSize_py)) return;
 
-  int pixel_index = 4 * (j * px + i);
+  int pixel_index = 4 * (j * rtdata.fSize_px + i);
 
-  float u = float(i) / float(px);
-  float v = float(j) / float(py);
+  float u = float(i) / float(rtdata.fSize_px);
+  float v = float(j) / float(rtdata.fSize_py);
 
   // model view hard-coded for debugging
   // traceML size is 2200,2200,6200, centered at 0,0,0
   //printf("Creating instance of GPU ray-tracer\n");
   rtdata.fWorld   = gpu_world;
-  rtdata.Print();
+  //rtdata.Print();
 
   Vector3D<Precision> origin = {0, -7000, 0};
   Vector3D<Precision> direction = {v - 0.5, 1.9, 2*u - 1};
@@ -346,7 +346,6 @@ void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rt
 
 void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
-  using Raytracer = cuda::Raytracer;
   using Vector3 = cuda::Vector3D<double>;
 
   float *buffer = nullptr;
@@ -362,20 +361,10 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
     exit(1);
   }
 
-  // MainKernel<<<1,1>>>(gpu_world, px, py, buffer, maxdepth);
-  Vector3 viewplane(0,-7000,0), up(1, 0, 0);
-  double scale = 1.;
-  ERTmodel model = kRTspecular;
-  ERTView view = kRTVperspective;
-
   size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
   char *vpstate_buffer = nullptr;
   checkCudaErrors(cudaMallocManaged((void **)&vpstate_buffer, navstate_size));
   auto vpstate  = NavigationState::MakeInstanceAt(maxdepth, (void *)(vpstate_buffer));
-  
-  // We should be able to use the CPU world to locate the point, then update the navigation state located in the shared mem
-  Raytracer::LocateGlobalPoint(world, viewplane, *vpstate, true);
-  vpstate->Print();
   
   // Create the raytracer data object
   RaytracerData_t rtdata;
@@ -392,12 +381,15 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   rtdata.fMaxDepth   = maxdepth;
 
   Raytracer::InitializeModel(world, rtdata);
-  rtdata.Print();
-  // Fill in the pointers to the GPU world and viewplane state
+   // We should be able to use the CPU world to locate the point, then update the navigation state located in the shared mem
+  Raytracer::LocateGlobalPoint(world, rtdata.fScreenPos, *vpstate, true);
+
+// Fill in the pointers to the GPU world and viewplane state
   rtdata.fVPstate = vpstate;
+  rtdata.Print();
 
   dim3 blocks(px / 8 + 1, py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata);
+  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata, buffer);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());

@@ -66,6 +66,7 @@ struct RaytracerData_t {
   VPlacedVolumePtr_t fWorld = nullptr; ///< World volume
   NavigationState *fVPstate = nullptr; ///< Navigation state corresponding to the viewpoint
 
+  VECCORE_ATT_HOST_DEVICE
   void Print();
 };
 
