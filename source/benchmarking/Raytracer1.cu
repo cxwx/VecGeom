@@ -26,260 +26,6 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
 
 #define checkCudaErrors(val) check_cuda((val), #val, __FILE__, __LINE__)
 
-__device__
-VPlacedVolume const*
-LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point, NavigationState &path, bool top)
-{
-  VPlacedVolume const *candvolume = vol;
-  Vector3D<Precision> currentpoint(point);
-  if (top) {
-    assert(vol != nullptr);
-    if (!vol->UnplacedContains(point)) return nullptr;
-  }
-  path.Push(candvolume);
-  LogicalVolume const *lvol         = candvolume->GetLogicalVolume();
-  Vector<Daughter> const *daughters = lvol->GetDaughtersp();
-
-  bool godeeper = true;
-  while (daughters->size() > 0 && godeeper) {
-    for (size_t i = 0; i < daughters->size() && godeeper; ++i) {
-      VPlacedVolume const *nextvolume = (*daughters)[i];
-      Vector3D<Precision> transformedpoint;
-      if (nextvolume->Contains(currentpoint, transformedpoint)) {
-        path.Push(nextvolume);
-        currentpoint = transformedpoint;
-        candvolume   = nextvolume;
-        daughters    = candvolume->GetLogicalVolume()->GetDaughtersp();
-        break;
-      }
-    }
-    godeeper = false;
-  }
-  return candvolume;
-}
-
-__device__
-VPlacedVolume const*
-LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
-                            Vector3D<Precision> const &point, NavigationState &path, bool top)
-{
-  VPlacedVolume const *candvolume = vol;
-  Vector3D<Precision> currentpoint(point);
-  if (top) {
-    assert(vol != nullptr);
-    candvolume = (vol->UnplacedContains(point)) ? vol : nullptr;
-  }
-  if (candvolume) {
-    path.Push(candvolume);
-    LogicalVolume const *lvol         = candvolume->GetLogicalVolume();
-    Vector<Daughter> const *daughters = lvol->GetDaughtersp();
-
-    bool godeeper = true;
-    while (daughters->size() > 0 && godeeper) {
-      godeeper = false;
-      // returns nextvolume; and transformedpoint; modified path
-      for (size_t i = 0; i < daughters->size(); ++i) {
-        VPlacedVolume const *nextvolume = (*daughters)[i];
-        if (nextvolume != excludedvolume) {
-          Vector3D<Precision> transformedpoint;
-          if (nextvolume->Contains(currentpoint, transformedpoint)) {
-            path.Push(nextvolume);
-            currentpoint = transformedpoint;
-            candvolume   = nextvolume;
-            daughters    = candvolume->GetLogicalVolume()->GetDaughtersp();
-            godeeper     = true;
-            break;
-          }
-        } // end if excludedvolume
-      }
-    }
-  }
-  return candvolume;
-}
-
-__device__
-VPlacedVolume const*
-RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavigationState &path)
-{
-  VPlacedVolume const *currentmother = path.Top();
-  VPlacedVolume const *entryvol      = currentmother;
-  if (currentmother != nullptr) {
-    Vector3D<Precision> tmp = localpoint;
-    while (currentmother) {
-      if (currentmother == entryvol || currentmother->GetLogicalVolume()->GetUnplacedVolume()->IsAssembly() ||
-          !currentmother->UnplacedContains(tmp)) {
-        path.Pop();
-        Vector3D<Precision> pointhigherup = currentmother->GetTransformation()->InverseTransform(tmp);
-        tmp                               = pointhigherup;
-        currentmother                     = path.Top();
-      } else {
-        break;
-      }
-    }
-
-    if (currentmother) {
-      path.Pop();
-      return LocateGlobalPointExclVolume(currentmother, entryvol, tmp, path, false);
-    }
-  }
-  return currentmother;
-}
-
-__device__
-Precision
-ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
-                              Precision step_limit, NavigationState const &in_state, NavigationState &out_state)
-{
-  // calculate local point/dir from global point/dir
-  // call the static function for this provided/specialized by the Impl
-  Vector3D<Precision> localpoint;
-  Vector3D<Precision> localdir;
-  // Impl::DoGlobalToLocalTransformation(in_state, globalpoint, globaldir, localpoint, localdir);
-  Transformation3D m;
-  in_state.TopMatrix(m);
-  localpoint = m.Transform(globalpoint);
-  localdir   = m.TransformDirection(globaldir);
-
-  Precision step                    = step_limit;
-  VPlacedVolume const *hitcandidate = nullptr;
-  auto pvol                         = in_state.Top();
-  auto lvol                         = pvol->GetLogicalVolume();
-
-  // need to calc DistanceToOut first
-  // step = Impl::TreatDistanceToMother(pvol, localpoint, localdir, step_limit);
-  step = pvol->DistanceToOut(localpoint, localdir, step_limit);
-  if (step < 0) step = 0;
-  // "suck in" algorithm from Impl and treat hit detection in local coordinates for daughters
-  //((Impl *)this)
-  //    ->Impl::CheckDaughterIntersections(lvol, localpoint, localdir, &in_state, &out_state, step, hitcandidate);
-  auto *daughters = lvol->GetDaughtersp();
-  auto ndaughters = daughters->size();
-  for (decltype(ndaughters) d = 0; d < ndaughters; ++d) {
-    auto daughter    = daughters->operator[](d);
-    Precision ddistance = daughter->DistanceToIn(localpoint, localdir, step);
-
-    // if distance is negative; we are inside that daughter and should relocate
-    // unless distance is minus infinity
-    const bool valid =
-        (ddistance < step && !IsInf(ddistance)) && !((ddistance <= 0.) && in_state.GetLastExited() == daughter);
-    hitcandidate = valid ? daughter : hitcandidate;
-    step         = valid ? ddistance : step;
-  }
-
-  // fix state
-  bool done;
-  // step = Impl::PrepareOutState(in_state, out_state, step, step_limit, hitcandidate, done);
-  // now we have the candidates and we prepare the out_state
-  in_state.CopyTo(&out_state);
-  done = false;
-  if (step == kInfLength && step_limit > 0.) {
-    step = vecgeom::kTolerance;
-    out_state.SetBoundaryState(true);
-    do {
-      out_state.Pop();
-    } while (out_state.Top()->GetLogicalVolume()->GetUnplacedVolume()->IsAssembly());
-    done = true;
-  } else {
-    // is geometry further away than physics step?
-    // this is a physics step
-    if (step > step_limit) {
-      // don't need to do anything
-      step = step_limit;
-      out_state.SetBoundaryState(false);
-    } else {
-      // otherwise it is a geometry step
-      out_state.SetBoundaryState(true);
-      if (hitcandidate) out_state.Push(hitcandidate);
-
-      if (step < 0.) {
-        // std::cerr << "WARNING: STEP NEGATIVE; NEXTVOLUME " << nexthitvolume << std::endl;
-        // InspectEnvironmentForPointAndDirection( globalpoint, globaldir, currentstate );
-        step = 0.;
-      }
-    }
-  }
-
-  if (done) {
-    if (out_state.Top() != nullptr) {
-      assert(!out_state.Top()->GetLogicalVolume()->GetUnplacedVolume()->IsAssembly());
-    }
-    return step;
-  }
-  // step was physics limited
-  if (!out_state.IsOnBoundary()) return step;
-
-  // otherwise if necessary do a relocation
-  // try relocation to refine out_state to correct location after the boundary
-
-  // ((Impl *)this)->Impl::Relocate(MovePointAfterBoundary(localpoint, localdir, step), in_state, out_state);
-  localpoint += (step + 1.E-6) * localdir;
-
-  if (out_state.Top() == in_state.Top()) {
-    RelocatePointFromPathForceDifferent(localpoint, out_state);
-  } else {
-    // continue directly further down ( next volume should have been stored in out_state already )
-    VPlacedVolume const *nextvol = out_state.Top();
-    out_state.Pop();
-    LocateGlobalPoint(nextvol, nextvol->GetTransformation()->Transform(localpoint), out_state, false);
-  }
-
-  if (out_state.Top() != nullptr) {
-    while (out_state.Top()->IsAssembly()) {
-      out_state.Pop();
-    }
-    assert(!out_state.Top()->GetLogicalVolume()->GetUnplacedVolume()->IsAssembly());
-  }
-  return step;
-}
-
-__device__
-Color_t raytrace(VPlacedVolume const* const world, Vector3D<Precision> origin, Vector3D<Precision> dir, int maxdepth)
-{
-  Ray_t ray;
-  char cstate[512];
-  char nstate[512];
-
-  ray.fPos = origin;
-  ray.fDir = dir;
-  ray.fColor = 0xFFFFFFFF;
-  ray.fCrtState  = NavigationState::MakeInstanceAt(maxdepth, (void *)(cstate));
-  ray.fNextState = NavigationState::MakeInstanceAt(maxdepth, (void *)(nstate));
-
-  ray.fVolume = LocateGlobalPoint(world, ray.fPos, *ray.fCrtState, true);
-
-  do {
-    auto t = world->DistanceToIn(ray.fPos, ray.fDir);
-
-    if (t == kInfLength)
-      return ray.fColor;
-
-    ray.fPos += (t + 1e-7) * ray.fDir;
-    ray.fVolume = LocateGlobalPoint(world, ray.fPos, *ray.fCrtState, true);
-
-  } while (!ray.fVolume);
-
-  if (!ray.fVolume)
-    return ray.fColor;
-
-  *ray.fNextState = *ray.fCrtState;
-
-  while (ray.fVolume) {
-    auto t = ComputeStepAndPropagatedState(ray.fPos, ray.fDir, kInfLength, *ray.fCrtState, *ray.fNextState);
-
-    if (t == kInfLength || !ray.fNextState->Top())
-      break;
-
-    ray.fPos += (t + 1e-7) * ray.fDir;
-    ray.fVolume = ray.fNextState->Top();
-    *ray.fCrtState = *ray.fNextState;
-
-    if (ray.fVolume->GetDaughters().size() == 0)
-      ray.fColor += 0x0000ff15;
-  }
-
-  return ray.fColor;
-}
-
 #if 0
 void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
@@ -314,59 +60,33 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 #endif
 
 __global__
-void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata, unsigned char *buffer)
+void RenderKernel(RaytracerData_t rtdata, char *input_buffer, unsigned char *output_buffer)
 {
-  int i = threadIdx.x + blockIdx.x * blockDim.x;
-  int j = threadIdx.y + blockIdx.y * blockDim.y;
+  int px = threadIdx.x + blockIdx.x * blockDim.x;
+  int py = threadIdx.y + blockIdx.y * blockDim.y;
 
-  if ((i >= rtdata.fSize_px) || (j >= rtdata.fSize_py)) return;
+  if ((px >= rtdata.fSize_px) || (py >= rtdata.fSize_py)) return;
 
-  int pixel_index = 4 * (j * rtdata.fSize_px + i);
-
-  float u = float(i) / float(rtdata.fSize_px);
-  float v = float(j) / float(rtdata.fSize_py);
+  int pixel_index = 4 * (py * rtdata.fSize_px + px);
 
   // model view hard-coded for debugging
   // traceML size is 2200,2200,6200, centered at 0,0,0
   //printf("Creating instance of GPU ray-tracer\n");
-  rtdata.fWorld   = gpu_world;
   //rtdata.Print();
 
-  Vector3D<Precision> origin = {0, -7000, 0};
-  Vector3D<Precision> direction = {v - 0.5, 1.9, 2*u - 1};
-  direction.Normalize();
+  Color_t pixel_color = Raytracer::RaytraceOne(px, py, rtdata, input_buffer);
 
-  Color_t pixel_color = raytrace(gpu_world, origin, direction, rtdata.fMaxDepth);
-
-  buffer[pixel_index + 0] = pixel_color.Red();
-  buffer[pixel_index + 1] = pixel_color.Green();
-  buffer[pixel_index + 2] = pixel_color.Blue();
-  buffer[pixel_index + 3] = 1.0f;
+  output_buffer[pixel_index + 0] = pixel_color.fComp.red;
+  output_buffer[pixel_index + 1] = pixel_color.fComp.green;
+  output_buffer[pixel_index + 2] = pixel_color.fComp.blue;
+  output_buffer[pixel_index + 3] = 255;
 }
 
 void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxdepth)
 {
   using Vector3 = cuda::Vector3D<double>;
 
-  unsigned char *buffer = nullptr;
-  checkCudaErrors(cudaMallocManaged((void **)&buffer, 4 * sizeof(unsigned char) * px * py));
-
-  vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
-  vecgeom::cxx::CudaManager::Instance().Synchronize();
-  
-  auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
-
-  if (!gpu_world) {
-    fprintf(stderr, "GPU world volume is a null pointer\n");
-    exit(1);
-  }
-
-  size_t navstate_size = NavigationState::SizeOfInstance(maxdepth);
-  char *vpstate_buffer = nullptr;
-  checkCudaErrors(cudaMallocManaged((void **)&vpstate_buffer, navstate_size));
-  auto vpstate  = NavigationState::MakeInstanceAt(maxdepth, (void *)(vpstate_buffer));
-  
-  // Create the raytracer data object
+  // Create the raytracer model. The parameters should come as arguments from the caller
   RaytracerData_t rtdata;
   rtdata.fScreenPos.Set(0, -7000, 0);
   rtdata.fUp.Set(1, 0, 0);
@@ -381,15 +101,35 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   rtdata.fMaxDepth   = maxdepth;
 
   Raytracer::InitializeModel(world, rtdata);
-   // We should be able to use the CPU world to locate the point, then update the navigation state located in the shared mem
-  Raytracer::LocateGlobalPoint(world, rtdata.fScreenPos, *vpstate, true);
 
-// Fill in the pointers to the GPU world and viewplane state
+  // Allocate ray data and output data on the device
+  size_t statesize = NavigationState::SizeOfInstance(maxdepth);
+  size_t raysize = Ray_t::SizeOfInstance(maxdepth);
+
+  printf("=== Allocating %.3f MB of ray data on the device\n", (float)rtdata.fNrays * raysize / 1048576);
+  char *input_buffer = nullptr;  
+  checkCudaErrors(cudaMallocManaged((void **)&input_buffer, statesize + rtdata.fNrays * raysize));
+
+  unsigned char *output_buffer = nullptr;
+  checkCudaErrors(cudaMallocManaged((void **)&output_buffer, 4 * sizeof(unsigned char) * px * py));
+
+  // Load and synchronize the geometry on the GPU
+  vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
+  vecgeom::cxx::CudaManager::Instance().Synchronize();
+  
+  auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
+  assert(gpu_world && "GPU world volume is a null pointer");
+  rtdata.fWorld   = gpu_world;
+
+  // Initialize the navigation state for the view point
+  auto vpstate = NavigationState::MakeInstanceAt(rtdata.fMaxDepth, (void *)(input_buffer));
+  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, *vpstate, true)
   rtdata.fVPstate = vpstate;
+
   rtdata.Print();
 
   dim3 blocks(px / 8 + 1, py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata, buffer);
+  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata, input_buffer, output_buffer);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
