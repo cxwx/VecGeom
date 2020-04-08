@@ -314,7 +314,7 @@ void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth)
 #endif
 
 __global__
-void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata, float *buffer)
+void RenderKernel(cuda::VPlacedVolume const *const gpu_world, RaytracerData_t rtdata, unsigned char *buffer)
 {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -348,8 +348,8 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
 {
   using Vector3 = cuda::Vector3D<double>;
 
-  float *buffer = nullptr;
-  checkCudaErrors(cudaMallocManaged((void **)&buffer, 4 * sizeof(float) * px * py));
+  unsigned char *buffer = nullptr;
+  checkCudaErrors(cudaMallocManaged((void **)&buffer, 4 * sizeof(unsigned char) * px * py));
 
   vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
   vecgeom::cxx::CudaManager::Instance().Synchronize();

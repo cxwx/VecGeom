@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
       fprintf(stdout, "geometry depth is %d\n", maxdepth);
 
    if (argv[2] && strcmp(argv[2], "CPU") == 0)
-     RenderCPU(world, nx, ny, maxdepth);
+     //RenderCPU(world, nx, ny, maxdepth);
    else
      RenderGPU((vecgeom::cuda::VPlacedVolume*)world, nx, ny, maxdepth);
 

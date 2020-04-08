@@ -30,12 +30,31 @@ struct Ray_t {
 
   Vector3D<double> fPos;
   Vector3D<double> fDir;
-  NavigationState *fCrtState  = nullptr;
-  NavigationState *fNextState = nullptr;
-  VPlacedVolumePtr_t fVolume  = nullptr;
-  int fNcrossed               = 0;
-  Color_t fColor;
-  bool fDone = false;
+  int fMaxDepth               = 0;         ///< maximum geometry depth
+  int fNcrossed               = 0;         ///< number of crossed boundaries
+  Color_t fColor              = 0;         ///< pixel color
+  VPlacedVolumePtr_t fVolume  = nullptr;   ///< current volume
+  bool fDone                  = false;     ///< done flag
+  NavigationState *fCrtState  = nullptr;   ///< navigation state for the current volume
+  NavigationState *fNextState = nullptr;   ///< navigation state for the next volume
+
+  VECCORE_ATT_HOST_DEVICE
+  static Ray_t *MakeInstanceAt(void *addr, int maxdepth)
+  {
+    return new (addr) Ray_t(addr, maxdepth);
+  }
+
+  Ray_t(int maxdepth) : fMaxDepth(maxdepth) {}
+  Ray_t(void *addr, int maxdepth);
+
+  VECCORE_ATT_HOST_DEVICE
+  static size_t SizeOfInstance(int maxdepth);
+
+  VECCORE_ATT_DEVICE
+  void FixGPUpointers();
+
+  //void Serialize(char *buffer);
+  //void Deserialize(char *buffer);
 };
 
 struct RaytracerData_t {
@@ -91,7 +110,7 @@ void ApplyRTmodel(Ray_t &ray, double step, RaytracerData_t const &rtdata);
 
 /// \brief Entry point to propagate all rays
 VECCORE_ATT_HOST_DEVICE
-void PropagateRays(RaytracerData_t &data);
+void PropagateRays(RaytracerData_t &data, void *rays_buffer, void *output_buffer);
 
 VECCORE_ATT_HOST_DEVICE
 Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata);
@@ -105,6 +124,7 @@ VPlacedVolumePtr_t LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlaced
                                                Vector3D<Precision> const &point, NavigationState &path, bool top);
 VECCORE_ATT_HOST_DEVICE
 VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavigationState &path);
+
 VECCORE_ATT_HOST_DEVICE
 double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
                                      Precision step_limit, NavigationState const &in_state, NavigationState &out_state);
@@ -113,8 +133,8 @@ double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vec
 
 } // End namespace VECGEOM_IMPL_NAMESPACE
 
-void write_ppm(std::string filename, float *buffer, int px, int py);
-void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth);
+void write_ppm(std::string filename, unsigned char *buffer, int px, int py);
+//void RenderCPU(VPlacedVolume const *const world, int px, int py, int maxdepth);
 
 } // End namespace vecgeom
 

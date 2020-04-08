@@ -8,6 +8,7 @@
 #include <VecGeom/base/Vector3D.h>
 #include <VecGeom/benchmarking/Raytracer.h>
 #include <VecGeom/management/GeoManager.h>
+#include <VecGeom/navigation/NavigationState.h>
 #include "ArgParser.h"
 
 #ifdef VECGEOM_GDML
@@ -78,6 +79,29 @@ int main(int argc, char *argv[])
   Raytracer::InitializeModel(world, rtdata);
   rtdata.Print();
 
-  Raytracer::PropagateRays(rtdata);
+  // Allocate and initialize all rays on the host
+  size_t statesize = NavigationState::SizeOfInstance(rtdata.fMaxDepth);
+  size_t raysize = Ray_t::SizeOfInstance(rtdata.fMaxDepth);
+  printf("=== Allocating %.3f MB of ray data on the host\n", (float)rtdata.fNrays * raysize / 1048576);
+  char *input_buffer = new char[statesize + rtdata.fNrays * raysize];
+  char *output_buffer = new char[4 * rtdata.fNrays * sizeof(char)];
+
+  // Initialize the navigation state for the view point
+  auto vpstate = NavigationState::MakeInstanceAt(rtdata.fMaxDepth, (void *)(input_buffer));
+  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, *vpstate, true);
+
+  rtdata.fVPstate = vpstate;
+
+  // Construct rays in place
+  char *raybuff = input_buffer + statesize;
+  for (int iray = 0; iray < rtdata.fNrays; ++iray)
+    Ray_t::MakeInstanceAt(raybuff + iray * raysize, rtdata.fMaxDepth);
+
+  // Run the CPU propagation kernel
+  Raytracer::PropagateRays(rtdata, input_buffer, output_buffer);
+
+  // Write the output
+  write_ppm("output.ppm", (unsigned char*)output_buffer, px, py);
+
   return 0;
 }
