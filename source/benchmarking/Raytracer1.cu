@@ -86,11 +86,20 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
 {
   using Vector3 = cuda::Vector3D<double>;
 
+  // setting an appropriate stack size
+  size_t def_stack_limit = 0, def_heap_limit = 0;
+  cudaDeviceGetLimit( &def_stack_limit, cudaLimitStackSize);
+  cudaDeviceGetLimit( &def_heap_limit, cudaLimitMallocHeapSize);
+  std::cout << "=== cudaLimitStackSize = " << def_stack_limit << "  cudaLimitMallocHeapSize = " << def_heap_limit << std::endl;
+  auto err = cudaDeviceSetLimit(cudaLimitStackSize, 4096);
+  cudaDeviceGetLimit( &def_stack_limit, cudaLimitStackSize);
+  std::cout << "=== CUDA thread stack size limit set now to: " << def_stack_limit << std::endl;
+
   // Create the raytracer model. The parameters should come as arguments from the caller
   RaytracerData_t rtdata;
   rtdata.fScreenPos.Set(0, -7000, 0);
   rtdata.fUp.Set(1, 0, 0);
-  rtdata.fZoom       = 1.;
+  rtdata.fZoom       = 5.;
   rtdata.fModel      = kRTspecular;
   rtdata.fView       = kRTVperspective;
   rtdata.fSize_px    = px;
@@ -107,7 +116,8 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   size_t raysize = Ray_t::SizeOfInstance(maxdepth);
 
   printf("=== Allocating %.3f MB of ray data on the device\n", (float)rtdata.fNrays * raysize / 1048576);
-  char *input_buffer = nullptr;  
+  //char *input_buffer_gpu = nullptr;
+  char *input_buffer = new char[statesize + rtdata.fNrays * raysize];
   checkCudaErrors(cudaMallocManaged((void **)&input_buffer, statesize + rtdata.fNrays * raysize));
 
   unsigned char *output_buffer = nullptr;
@@ -119,22 +129,28 @@ void RenderGPU(cuda::VPlacedVolume const *const world, int px, int py, int maxde
   
   auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
   assert(gpu_world && "GPU world volume is a null pointer");
-  rtdata.fWorld   = gpu_world;
 
   // Initialize the navigation state for the view point
   auto vpstate = NavigationState::MakeInstanceAt(rtdata.fMaxDepth, (void *)(input_buffer));
-  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, *vpstate, true)
+  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, *vpstate, true);
   rtdata.fVPstate = vpstate;
+  rtdata.fWorld   = gpu_world;
 
   rtdata.Print();
 
+// Construct rays in place
+  char *raybuff = input_buffer + statesize;
+  for (int iray = 0; iray < rtdata.fNrays; ++iray)
+    Ray_t::MakeInstanceAt(raybuff + iray * raysize, rtdata.fMaxDepth);
+
   dim3 blocks(px / 8 + 1, py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(gpu_world, rtdata, input_buffer, output_buffer);
+  RenderKernel<<<blocks, threads>>>(rtdata, input_buffer, output_buffer);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-  write_ppm("output.ppm", buffer, px, py);
+  write_ppm("output.ppm", output_buffer, px, py);
 
-  checkCudaErrors(cudaFree(buffer));
+  checkCudaErrors(cudaFree(input_buffer));
+  checkCudaErrors(cudaFree(output_buffer));
 }

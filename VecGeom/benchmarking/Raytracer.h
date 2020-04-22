@@ -44,13 +44,16 @@ struct Ray_t {
     return new (addr) Ray_t(addr, maxdepth);
   }
 
+  VECCORE_ATT_HOST_DEVICE
   Ray_t(int maxdepth) : fMaxDepth(maxdepth) {}
+
+  VECCORE_ATT_HOST_DEVICE
   Ray_t(void *addr, int maxdepth);
 
   VECCORE_ATT_HOST_DEVICE
   static size_t SizeOfInstance(int maxdepth);
 
-  VECCORE_ATT_DEVICE
+  VECCORE_ATT_HOST_DEVICE
   void FixGPUpointers();
 
   //void Serialize(char *buffer);
@@ -113,7 +116,7 @@ VECCORE_ATT_HOST_DEVICE
 void PropagateRays(RaytracerData_t &data, void *rays_buffer, void *output_buffer);
 
 VECCORE_ATT_HOST_DEVICE
-Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata);
+Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_buffer);
 
 // Navigation methods (just temporary here)
 VECCORE_ATT_HOST_DEVICE

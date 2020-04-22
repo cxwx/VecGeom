@@ -76,7 +76,7 @@ void Ray_t::FixGPUpointers()
 
 size_t Ray_t::SizeOfInstance(int maxdepth)
 {
-  size_t size = sizeof(Ray_t) + 2 * round_up_align(NavigationState::SizeOfInstance(maxdepth));
+  size_t size = sizeof(Ray_t) + 2 * round_up_align(NavigationState::SizeOfInstance(maxdepth)) + 64;
   return size;
 }
 
@@ -174,7 +174,7 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
   }
   ray->fDone = ray->fVolume == nullptr;
   if (ray->fDone) return ray->fColor;
-  *ray->fNextState = *ray->fCrtState;
+  //*ray->fNextState = *ray->fCrtState;
 
   // Now propagate ray
   while (!ray->fDone) {
@@ -194,7 +194,6 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
       ray->fColor = 0;
       return ray->fColor;
     }
-
     // Apply the selected RT model
     ray->fNcrossed++;
     ray->fVolume = nextvol;
@@ -395,7 +394,9 @@ double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vec
 
   // need to calc DistanceToOut first
   // step = Impl::TreatDistanceToMother(pvol, localpoint, localdir, step_limit);
-  step = pvol->DistanceToOut(localpoint, localdir, step_limit);
+  step = lvol->GetUnplacedVolume()->DistanceToOut(localpoint, localdir, step_limit);
+  //step = pvol->DistanceToOut(localpoint, localdir, step_limit);
+  
   if (step < 0) step = 0;
   // "suck in" algorithm from Impl and treat hit detection in local coordinates for daughters
   //((Impl *)this)
@@ -520,3 +521,4 @@ void write_ppm(std::string filename, unsigned char *buffer, int px, int py)
 #endif
 
 } // End namespace vecgeom
+
