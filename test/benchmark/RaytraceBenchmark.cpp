@@ -17,6 +17,11 @@
 
 using namespace vecgeom;
 
+int RaytraceBenchmarkCPU(vecgeom::cxx::RaytracerData_t &rtdata);
+#ifdef VECGEOM_ENABLE_CUDA
+int RaytraceBenchmarkGPU(vecgeom::cxx::RaytracerData_t &rtdata);
+#endif
+
 int main(int argc, char *argv[])
 {
 #ifndef VECGEOM_GDML
@@ -54,6 +59,8 @@ int main(int argc, char *argv[])
   OPTION_INT(objcol, 0x0000FFFF);   // blue
   OPTION_INT(vdepth, 4);            // visible depth
 
+  OPTION_INT(on_gpu, 0);            // run on GPU
+
 // Try to open the input file
 #ifdef VECGEOM_GDML
   bool load = vgdml::Frontend::Load(gdml_name.c_str());
@@ -79,6 +86,24 @@ int main(int argc, char *argv[])
   Raytracer::InitializeModel(world, rtdata);
   rtdata.Print();
 
+  auto ierr = 0;
+  if (on_gpu) {
+#ifdef VECGEOM_ENABLE_CUDA
+    ierr = RaytraceBenchmarkCPU(rtdata);
+#else
+    std::cout << "=== Cannot run RaytracerBenchmark on GPU since VecGeom CUDA support not compiled.\n";
+    return 1;
+#endif
+  } else {
+    ierr = RaytraceBenchmarkCPU(rtdata);
+  }
+  if (ierr) std::cout << "TestNavIndex FAILED\n";
+
+  return ierr;
+}
+
+int RaytraceBenchmarkCPU(vecgeom::cxx::RaytracerData_t &rtdata)
+{
   // Allocate and initialize all rays on the host
   size_t statesize = NavigationState::SizeOfInstance(rtdata.fMaxDepth);
   size_t raysize = Ray_t::SizeOfInstance(rtdata.fMaxDepth);
@@ -101,7 +126,7 @@ int main(int argc, char *argv[])
   Raytracer::PropagateRays(rtdata, input_buffer, output_buffer);
 
   // Write the output
-  write_ppm("output.ppm", (unsigned char*)output_buffer, px, py);
+  write_ppm("output.ppm", (unsigned char*)output_buffer, rtdata.fSize_px, rtdata.fSize_py);
 
   return 0;
 }

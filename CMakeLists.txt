@@ -731,7 +731,7 @@ if(VECGEOM_BENCHMARK)
     source/benchmarking/Benchmarker.cu
     source/benchmarking/NavigationBenchmarker.cu
     test/benchmark/TestNavIndex.cu
-    source/benchmarking/Raytracer.cu)
+    source/benchmarking/RaytraceBenchmark.cu)
 endif()
 
 ################################################################################

@@ -42,12 +42,6 @@ set(TEST_EXECUTABLES_BENCHMARK
   PARENT_SCOPE
 )
 
-if(CUDA)
-  set(TEST_EXECUTABLES_BENCHMARK ${TEST_EXECUTABLES_BENCHMARK}
-    ${PROJECT_SOURCE_DIR}/test/benchmark/RaytraceBenchmarkCUDA.cpp
-    PARENT_SCOPE)
-endif()
-
 #define which ones should be run under ctest
 set(THISCTESTS
   # TESTS MARKED # FAIL AND NEED ATTENTION
