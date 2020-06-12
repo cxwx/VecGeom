@@ -250,11 +250,6 @@ void ApplyRTmodel(Ray_t &ray, double step, RaytracerData_t const &rtdata)
 void PropagateRays(RaytracerData_t &rtdata, void *input_buffer, void *output_buffer)
 {
   // Propagate all rays and write out the image on the CPU
-#ifdef VECGEOM_ENABLE_CUDA
-  printf("Cannot run CPU propagation kernel on GPU\n");
-  return;
-#endif
-
   // The viewpoint state is the first in the buffer
   NavigationState *vpstate = reinterpret_cast<NavigationState*>(input_buffer);
   rtdata.fVPstate = vpstate;

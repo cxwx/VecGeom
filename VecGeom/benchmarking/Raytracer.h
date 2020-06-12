@@ -19,6 +19,12 @@ enum ERTmodel { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
 enum ERTView { kRTVparallel = 0, kRTVperspective };
 
 VECGEOM_DEVICE_FORWARD_DECLARE(class VPlacedVolume;);
+//VECGEOM_DEVICE_FORWARD_DECLARE(struct RaytraceData_t;);
+//VECGEOM_DEVICE_DECLARE_CONV(struct, RaytraceData_t);
+
+namespace cxx {
+struct RaytracerData_t;
+}
 
 inline namespace VECGEOM_IMPL_NAMESPACE {
 

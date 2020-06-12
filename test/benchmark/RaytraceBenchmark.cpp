@@ -19,7 +19,11 @@ using namespace vecgeom;
 
 int RaytraceBenchmarkCPU(vecgeom::cxx::RaytracerData_t &rtdata);
 #ifdef VECGEOM_ENABLE_CUDA
-int RaytraceBenchmarkGPU(vecgeom::cxx::RaytracerData_t &rtdata);
+int RaytraceBenchmarkGPU(vecgeom::cuda::VPlacedVolume const* const world,
+                         int px, int py, int model, int view, double zoom,
+			 double screenx, double screeny, double screenz,
+			 double upx, double upy, double upz,
+			 int lightcol, int objcol, int maxdepth, int vdepth);
 #endif
 
 int main(int argc, char *argv[])
@@ -31,22 +35,22 @@ int main(int argc, char *argv[])
 
   OPTION_STRING(gdml_name, "default.gdml");
   // image size in pixels
-  OPTION_INT(px, 1024);
-  OPTION_INT(py, 1024);
+  OPTION_INT(px, 1200);
+  OPTION_INT(py, 800);
 
   // RT model as in { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
-  OPTION_INT(model, 1);
+  OPTION_INT(model, 2);
 
   // RT view as in { kRTVparallel = 0, kRTVperspective };
   OPTION_INT(view, 1);
 
   // zoom w.r.t to the default view mode
-  OPTION_DOUBLE(zoom, 1);
+  OPTION_DOUBLE(zoom, 1.5);
 
   // Screen position in world coordinates
-  OPTION_DOUBLE(screenx, -2000);
-  OPTION_DOUBLE(screeny, -1500);
-  OPTION_DOUBLE(screenz, -600);
+  OPTION_DOUBLE(screenx, -10000);
+  OPTION_DOUBLE(screeny, -5000);
+  OPTION_DOUBLE(screenz, 0);
 
   // Up vector (no need to be normalized)
   OPTION_DOUBLE(upx, 0);
@@ -89,13 +93,15 @@ int main(int argc, char *argv[])
   auto ierr = 0;
   if (on_gpu) {
 #ifdef VECGEOM_ENABLE_CUDA
-    ierr = RaytraceBenchmarkCPU(rtdata);
+    ierr = RaytraceBenchmarkGPU((const vecgeom::cuda::VPlacedVolume *)world, px, py, model, view, zoom,
+                                screenx, screeny, screenz, upx, upy, upz,
+                                lightcol, objcol, rtdata.fMaxDepth, vdepth);
 #else
     std::cout << "=== Cannot run RaytracerBenchmark on GPU since VecGeom CUDA support not compiled.\n";
     return 1;
 #endif
   } else {
-    ierr = RaytraceBenchmarkCPU(rtdata);
+   ierr = RaytraceBenchmarkCPU(rtdata);
   }
   if (ierr) std::cout << "TestNavIndex FAILED\n";
 
