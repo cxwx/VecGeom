@@ -44,44 +44,25 @@ void RenderKernel(RaytracerData_t rtdata, char *input_buffer, unsigned char *out
   output_buffer[pixel_index + 3] = 255;
 }
 
-int RaytraceBenchmarkGPU(vecgeom::cuda::VPlacedVolume const* const world, int px, int py, 
-                         int model, int view, double zoom,
-			 double screenx, double screeny, double screenz,
-                         double upx, double upy, double upz,
-                         int lightcol, int objcol, int maxdepth, int vdepth)
+int RaytraceBenchmarkGPU(vecgeom::cuda::RaytracerData_t *rtdata)
 {
-  using Vector3 = cuda::Vector3D<double>;
-  RaytracerData_t rtdata;
-  
-  rtdata.fScreenPos.Set(screenx, screeny, screenz);
-  rtdata.fUp.Set(upx, upy, upz);
-  rtdata.fZoom       = zoom;
-  rtdata.fModel      = (ERTmodel)model;
-  rtdata.fView       = (ERTView)view;
-  rtdata.fSize_px    = px;
-  rtdata.fSize_py    = py;
-  rtdata.fLightColor = lightcol;
-  rtdata.fObjColor   = objcol;
-  rtdata.fVisDepth   = vdepth;
-  rtdata.fMaxDepth   = maxdepth;
-
-  Raytracer::InitializeModel(world, rtdata);
-  rtdata.Print();
-
   // Allocate ray data and output data on the device
+  size_t statesize = NavStateIndex::SizeOfInstance(rtdata->fMaxDepth);
   size_t raysize = Ray_t::SizeOfInstance();
+  printf(" State size is %lu, ray size is %lu\n", statesize, raysize);
 
-  printf("=== Allocating %.3f MB of ray data on the device\n", (float)rtdata.fNrays * raysize / 1048576);
+  printf("=== Allocating %.3f MB of ray data on the device\n", (float)rtdata->fNrays * raysize / 1048576);
   //char *input_buffer_gpu = nullptr;
-  char *input_buffer = new char[rtdata.fNrays * raysize];
-  checkCudaErrors(cudaMallocManaged((void **)&input_buffer, rtdata.fNrays * raysize));
+  char *input_buffer = new char[rtdata->fNrays * raysize];
+  checkCudaErrors(cudaMallocManaged((void **)&input_buffer, rtdata->fNrays * raysize));
 
   unsigned char *output_buffer = nullptr;
-  checkCudaErrors(cudaMallocManaged((void **)&output_buffer, 4 * sizeof(unsigned char) * rtdata.fSize_px * rtdata.fSize_py));
+  checkCudaErrors(cudaMallocManaged((void **)&output_buffer, 4 * sizeof(unsigned char) * rtdata->fSize_px * rtdata->fSize_py));
 
   // Load and synchronize the geometry on the GPU
-  vecgeom::cxx::CudaManager::Instance().LoadGeometry((vecgeom::cxx::VPlacedVolume*) world);
-  vecgeom::cxx::CudaManager::Instance().Synchronize();
+  auto &cudaManager = cxx::CudaManager::Instance();
+  cudaManager.LoadGeometry((vecgeom::cxx::VPlacedVolume*) rtdata->fWorld);
+  cudaManager.Synchronize();
 
   // CudaManager is altering the stack size... setting an appropriate value
   size_t def_stack_limit = 0, def_heap_limit = 0;
@@ -92,31 +73,30 @@ int RaytraceBenchmarkGPU(vecgeom::cuda::VPlacedVolume const* const world, int px
   cudaDeviceGetLimit( &def_stack_limit, cudaLimitStackSize);
   std::cout << "=== CUDA thread stack size limit set now to: " << def_stack_limit << std::endl;
   
-  auto gpu_world = vecgeom::cxx::CudaManager::Instance().world_gpu();
+  auto gpu_world = cudaManager.world_gpu();
   assert(gpu_world && "GPU world volume is a null pointer");
 
   // Initialize the navigation state for the view point
   NavStateIndex vpstate;
-  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, vpstate, true);
-  rtdata.fVPstate = vpstate;
-  rtdata.fWorld   = gpu_world;
+  Raytracer::LocateGlobalPoint(rtdata->fWorld, rtdata->fStart, vpstate, true);
+  rtdata->fVPstate = vpstate;
+  rtdata->fWorld   = gpu_world;
 
-  rtdata.Print();
+  rtdata->Print();
 
 // Construct rays in place
-  for (int iray = 0; iray < rtdata.fNrays; ++iray)
+  for (int iray = 0; iray < rtdata->fNrays; ++iray)
     Ray_t::MakeInstanceAt(input_buffer + iray * raysize);
 
-  dim3 blocks(rtdata.fSize_px / 8 + 1, rtdata.fSize_py / 8 + 1), threads(8, 8);
-  RenderKernel<<<blocks, threads>>>(rtdata, input_buffer, output_buffer);
+  dim3 blocks(rtdata->fSize_px / 8 + 1, rtdata->fSize_py / 8 + 1), threads(8, 8);
+  RenderKernel<<<blocks, threads>>>(*rtdata, input_buffer, output_buffer);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-  write_ppm("output.ppm", output_buffer, rtdata.fSize_px, rtdata.fSize_py);
+  write_ppm("output.ppm", output_buffer, rtdata->fSize_px, rtdata->fSize_py);
 
   checkCudaErrors(cudaFree(input_buffer));
   checkCudaErrors(cudaFree(output_buffer));
   return 0;
 }
-

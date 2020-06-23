@@ -17,13 +17,18 @@
 
 using namespace vecgeom;
 
-int RaytraceBenchmarkCPU(vecgeom::cxx::RaytracerData_t &rtdata);
+// forward declarations
+int RaytraceBenchmarkCPU(cxx::RaytracerData_t &rtdata);
+
+
 #ifdef VECGEOM_ENABLE_CUDA
-int RaytraceBenchmarkGPU(vecgeom::cuda::VPlacedVolume const* const world,
-                         int px, int py, int model, int view, double zoom,
-			 double screenx, double screeny, double screenz,
-			 double upx, double upy, double upz,
-			 int lightcol, int objcol, int maxdepth, int vdepth);
+namespace vecgeom {
+namespace cuda {
+struct RaytracerData_t;
+} // namespace cuda
+} // namespace vecgeom
+
+int RaytraceBenchmarkGPU(cuda::RaytracerData_t *);
 #endif
 
 int main(int argc, char *argv[])
@@ -98,9 +103,8 @@ int main(int argc, char *argv[])
   auto ierr = 0;
   if (on_gpu) {
 #ifdef VECGEOM_ENABLE_CUDA
-    ierr = RaytraceBenchmarkGPU((const vecgeom::cuda::VPlacedVolume *)world, px, py, model, view, zoom,
-                                screenx, screeny, screenz, upx, upy, upz,
-                                lightcol, objcol, rtdata.fMaxDepth, vdepth);
+    auto rtdata_cuda = reinterpret_cast<cuda::RaytracerData_t *>(&rtdata);
+    ierr = RaytraceBenchmarkGPU(rtdata_cuda);
 #else
     std::cout << "=== Cannot run RaytracerBenchmark on GPU since VecGeom CUDA support not compiled.\n";
     return 1;
