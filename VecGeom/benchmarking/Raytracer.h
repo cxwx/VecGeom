@@ -8,6 +8,7 @@
 #include <VecGeom/base/Global.h>
 #include <VecGeom/base/Vector3D.h>
 #include <VecGeom/benchmarking/Color.h>
+#include <VecGeom/navigation/NavStateIndex.h>
 
 #ifdef VECGEOM_ENABLE_CUDA
 #include <VecGeom/backend/cuda/Interface.h>
@@ -19,16 +20,9 @@ enum ERTmodel { kRTxray = 0, kRTspecular, kRTtransparent, kRTdiffuse };
 enum ERTView { kRTVparallel = 0, kRTVperspective };
 
 VECGEOM_DEVICE_FORWARD_DECLARE(class VPlacedVolume;);
-//VECGEOM_DEVICE_FORWARD_DECLARE(struct RaytraceData_t;);
-//VECGEOM_DEVICE_DECLARE_CONV(struct, RaytraceData_t);
-
-namespace cxx {
-struct RaytracerData_t;
-}
 
 inline namespace VECGEOM_IMPL_NAMESPACE {
 
-class NavigationState;
 class VPlacedVolume;
 
 struct Ray_t {
@@ -36,34 +30,24 @@ struct Ray_t {
 
   Vector3D<double> fPos;
   Vector3D<double> fDir;
-  int fMaxDepth               = 0;         ///< maximum geometry depth
-  int fNcrossed               = 0;         ///< number of crossed boundaries
-  Color_t fColor              = 0;         ///< pixel color
-  VPlacedVolumePtr_t fVolume  = nullptr;   ///< current volume
-  bool fDone                  = false;     ///< done flag
-  NavigationState *fCrtState  = nullptr;   ///< navigation state for the current volume
-  NavigationState *fNextState = nullptr;   ///< navigation state for the next volume
+  NavStateIndex fCrtState;               ///< navigation state for the current volume
+  NavStateIndex fNextState;              ///< navigation state for the next volume
+  VPlacedVolumePtr_t fVolume  = nullptr; ///< current volume
+  int fNcrossed               = 0;       ///< number of crossed boundaries
+  Color_t fColor              = 0;       ///< pixel color
+  bool fDone                  = false;   ///< done flag
 
   VECCORE_ATT_HOST_DEVICE
-  static Ray_t *MakeInstanceAt(void *addr, int maxdepth)
+  static Ray_t *MakeInstanceAt(void *addr)
   {
-    return new (addr) Ray_t(addr, maxdepth);
+    return new (addr) Ray_t();
   }
 
   VECCORE_ATT_HOST_DEVICE
-  Ray_t(int maxdepth) : fMaxDepth(maxdepth) {}
+  Ray_t() {}
 
   VECCORE_ATT_HOST_DEVICE
-  Ray_t(void *addr, int maxdepth);
-
-  VECCORE_ATT_HOST_DEVICE
-  static size_t SizeOfInstance(int maxdepth);
-
-  VECCORE_ATT_HOST_DEVICE
-  void FixGPUpointers();
-
-  //void Serialize(char *buffer);
-  //void Deserialize(char *buffer);
+  static size_t SizeOfInstance() { return sizeof(Ray_t); }
 };
 
 struct RaytracerData_t {
@@ -91,8 +75,8 @@ struct RaytracerData_t {
   ERTmodel fModel     = kRTxray;         ///< Selected RT model
   ERTView fView       = kRTVperspective; ///< View type
 
-  VPlacedVolumePtr_t fWorld = nullptr; ///< World volume
-  NavigationState *fVPstate = nullptr; ///< Navigation state corresponding to the viewpoint
+  VPlacedVolumePtr_t fWorld = nullptr;   ///< World volume
+  NavStateIndex fVPstate;                ///< Navigation state corresponding to the viewpoint
 
   VECCORE_ATT_HOST_DEVICE
   void Print();
@@ -126,17 +110,17 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
 
 // Navigation methods (just temporary here)
 VECCORE_ATT_HOST_DEVICE
-VPlacedVolumePtr_t LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point, NavigationState &path,
+VPlacedVolumePtr_t LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point, NavStateIndex &path,
                                      bool top);
 VECCORE_ATT_HOST_DEVICE
 VPlacedVolumePtr_t LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
-                                               Vector3D<Precision> const &point, NavigationState &path, bool top);
+                                               Vector3D<Precision> const &point, NavStateIndex &path, bool top);
 VECCORE_ATT_HOST_DEVICE
-VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavigationState &path);
+VPlacedVolumePtr_t RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavStateIndex &path);
 
 VECCORE_ATT_HOST_DEVICE
 double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
-                                     Precision step_limit, NavigationState const &in_state, NavigationState &out_state);
+                                     Precision step_limit, NavStateIndex const &in_state, NavStateIndex &out_state);
 
 } // End namespace Raytracer
 

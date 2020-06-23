@@ -8,7 +8,7 @@
 #include <VecGeom/base/Vector3D.h>
 #include <VecGeom/benchmarking/Raytracer.h>
 #include <VecGeom/management/GeoManager.h>
-#include <VecGeom/navigation/NavigationState.h>
+#include <VecGeom/navigation/NavStatePath.h>
 #include "ArgParser.h"
 
 #ifdef VECGEOM_GDML
@@ -31,6 +31,10 @@ int main(int argc, char *argv[])
 #ifndef VECGEOM_GDML
   std::cout << "### VecGeom must be compiled with GDML support to run this.\n";
   return 1;
+#endif
+#ifndef VECGEOM_USE_NAVINDEX
+  std::cout << "### VecGeom must be compiled with USE_NAVINDEX support to run this.\n";
+  return 2;
 #endif
 
   OPTION_STRING(gdml_name, "default.gdml");
@@ -67,12 +71,13 @@ int main(int argc, char *argv[])
 
 // Try to open the input file
 #ifdef VECGEOM_GDML
-  bool load = vgdml::Frontend::Load(gdml_name.c_str());
+  bool load = vgdml::Frontend::Load(gdml_name.c_str(), false);
   if (!load) return 2;
 #endif
 
   auto world = GeoManager::Instance().GetWorld();
   if (!world) return 3;
+
   RaytracerData_t rtdata;
 
   rtdata.fScreenPos.Set(screenx, screeny, screenz);
@@ -111,22 +116,20 @@ int main(int argc, char *argv[])
 int RaytraceBenchmarkCPU(vecgeom::cxx::RaytracerData_t &rtdata)
 {
   // Allocate and initialize all rays on the host
-  size_t statesize = NavigationState::SizeOfInstance(rtdata.fMaxDepth);
-  size_t raysize = Ray_t::SizeOfInstance(rtdata.fMaxDepth);
+  size_t raysize = Ray_t::SizeOfInstance();
   printf("=== Allocating %.3f MB of ray data on the host\n", (float)rtdata.fNrays * raysize / 1048576);
-  char *input_buffer = new char[statesize + rtdata.fNrays * raysize];
+  char *input_buffer = new char[rtdata.fNrays * raysize];
   char *output_buffer = new char[4 * rtdata.fNrays * sizeof(char)];
 
   // Initialize the navigation state for the view point
-  auto vpstate = NavigationState::MakeInstanceAt(rtdata.fMaxDepth, (void *)(input_buffer));
-  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, *vpstate, true);
+  NavStateIndex vpstate;
+  Raytracer::LocateGlobalPoint(rtdata.fWorld, rtdata.fStart, vpstate, true);
 
   rtdata.fVPstate = vpstate;
 
   // Construct rays in place
-  char *raybuff = input_buffer + statesize;
   for (int iray = 0; iray < rtdata.fNrays; ++iray)
-    Ray_t::MakeInstanceAt(raybuff + iray * raysize, rtdata.fMaxDepth);
+    Ray_t::MakeInstanceAt(input_buffer + iray * raysize);
 
   // Run the CPU propagation kernel
   Raytracer::PropagateRays(rtdata, input_buffer, output_buffer);

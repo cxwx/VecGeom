@@ -6,16 +6,9 @@
 #include <VecGeom/base/Transformation3D.h>
 #include <VecGeom/base/Stopwatch.h>
 
-#include <VecGeom/navigation/NavigationState.h>
+#include <VecGeom/navigation/NavStateIndex.h>
 #include <VecGeom/volumes/PlacedVolume.h>
 #include <VecGeom/management/GeoManager.h>
-
-/*
-#include <VecGeom/navigation/NewSimpleNavigator.h>
-#include <VecGeom/navigation/SimpleABBoxNavigator.h>
-#include <VecGeom/navigation/SimpleABBoxLevelLocator.h>
-#include <VecGeom/navigation/HybridNavigator2.h>
-*/
 
 #ifdef VECGEOM_CUDA_INTERFACE
 #include "VecGeom/backend/cuda/Backend.h"
@@ -33,6 +26,8 @@ namespace vecgeom {
  * @brief Rounds up an address to the aligned value
  * @param buf Buffer address to align
  */
+
+/*
 VECCORE_ATT_HOST_DEVICE
 static char *round_up_align(char *buf)
 {
@@ -40,11 +35,12 @@ static char *round_up_align(char *buf)
   if (remainder == 0) return buf;
   return (buf + 64 - remainder);
 }
-
+*/
 /**
  * @brief Rounds up a value to upper aligned version
  * @param buf Buffer address to align
  */
+/*
 VECCORE_ATT_HOST_DEVICE
 static size_t round_up_align(size_t value)
 {
@@ -52,9 +48,10 @@ static size_t round_up_align(size_t value)
   if (remainder == 0) return value;
   return (value + 64 - remainder);
 }
-
+*/
 inline namespace VECGEOM_IMPL_NAMESPACE {
 
+/*
 Ray_t::Ray_t(void *addr, int maxdepth) : fMaxDepth(maxdepth)
 {
   char *path_addr = round_up_align((char *)addr + sizeof(Ray_t));
@@ -64,30 +61,19 @@ Ray_t::Ray_t(void *addr, int maxdepth) : fMaxDepth(maxdepth)
   fNextState      = NavigationState::MakeInstanceAt(maxdepth, path_addr);
 }
 
-void Ray_t::FixGPUpointers()
-{
-  // Rays are copied from host to device in a buffer, containing still the CPU pointers, which are invalid
-  // Since the states are following the regular Ray_t data, we just need to recompute the pointers (when on the device)
-  char *path_addr = round_up_align((char *)this + sizeof(Ray_t));
-  fCrtState = reinterpret_cast<NavigationState*>(path_addr);
-  path_addr      += round_up_align(NavigationState::SizeOfInstance(fMaxDepth));
-  fNextState = reinterpret_cast<NavigationState*>(path_addr);
-}
-
 size_t Ray_t::SizeOfInstance(int maxdepth)
 {
   size_t size = sizeof(Ray_t) + 2 * round_up_align(NavigationState::SizeOfInstance(maxdepth)) + 64;
   return size;
 }
-
+*/
 void RaytracerData_t::Print()
 {
   printf("  screen_pos(%g, %g, %g) screen_size(%d, %d)\n", fScreenPos[0], fScreenPos[1], fScreenPos[2], fSize_px, fSize_py);
   printf("  light_dir(%g, %g, %g) light_color(0x%08x) obj_color(0x%08x)\n", fSourceDir[0], fSourceDir[1], fSourceDir[2], fLightColor.fColor, fObjColor.fColor);
   printf("  zoom_factor(%g) visible_depth(%d/%d) rt_model(%d) rt_view(%d)\n", fZoom, fVisDepth, fMaxDepth, (int)fModel, (int)fView);
   printf("  viewpoint_state: ");
-  if (fVPstate) fVPstate->Print();
-  else printf("nullptr\n");
+  fVPstate.Print();
 }
 
 namespace Raytracer {
@@ -142,15 +128,14 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
 {
   constexpr int kMaxTries      = 10;
   constexpr double kPush       = 1.e-8;  
-  int maxdepth                 = rtdata.fMaxDepth;
 
   //if (px == rtdata.fSize_px/2 && py == rtdata.fSize_py/2) {
   //  printf("px=%d  py=%d\n", px, py);
   //}
 
-  size_t statesize = NavigationState::SizeOfInstance(maxdepth);
-  size_t raysize   = Ray_t::SizeOfInstance(maxdepth);
-  char *raybuff    = (char*)input_buffer + statesize;
+  //size_t statesize = NavigationState::SizeOfInstance(maxdepth);
+  size_t raysize   = Ray_t::SizeOfInstance();
+  char *raybuff    = (char*)input_buffer;
 
   int ray_index = py * rtdata.fSize_px + px;
   Ray_t *ray = (Ray_t*)(raybuff + ray_index * raysize);
@@ -161,8 +146,8 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
   ray->fDir                     = (rtdata.fView == kRTVperspective) ? pos_onscreen - rtdata.fStart : rtdata.fDir;
   ray->fDir.Normalize();
   ray->fColor  = 0xFFFFFFFF; // white
-  ray->fVolume = (rtdata.fView == kRTVperspective) ? rtdata.fVPstate->Top()
-                                                  : LocateGlobalPoint(rtdata.fWorld, ray->fPos, *ray->fCrtState, true);
+  ray->fVolume = (rtdata.fView == kRTVperspective) ? rtdata.fVPstate.Top()
+                                                  : LocateGlobalPoint(rtdata.fWorld, ray->fPos, ray->fCrtState, true);
   int itry = 0;
   while (!ray->fVolume && itry < kMaxTries) {
     auto snext = rtdata.fWorld->DistanceToIn(ray->fPos, ray->fDir);
@@ -170,7 +155,7 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
     if (ray->fDone) return ray->fColor;
     // Propagate to the world volume (but do not increment the boundary count)
     ray->fPos += (snext + kPush) * ray->fDir;
-    ray->fVolume = LocateGlobalPoint(rtdata.fWorld, ray->fPos, *ray->fCrtState, true);
+    ray->fVolume = LocateGlobalPoint(rtdata.fWorld, ray->fPos, ray->fCrtState, true);
   }
   ray->fDone = ray->fVolume == nullptr;
   if (ray->fDone) return ray->fColor;
@@ -183,8 +168,8 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
     int nsmall   = 0;
 
     while (nextvol == ray->fVolume && nsmall < kMaxTries) {
-      snext   = ComputeStepAndPropagatedState(ray->fPos, ray->fDir, kInfLength, *ray->fCrtState, *ray->fNextState);
-      nextvol = ray->fNextState->Top();
+      snext   = ComputeStepAndPropagatedState(ray->fPos, ray->fDir, kInfLength, ray->fCrtState, ray->fNextState);
+      nextvol = ray->fNextState.Top();
       ray->fPos += (snext + kPush) * ray->fDir;
       nsmall++;
     }
@@ -209,13 +194,13 @@ Color_t RaytraceOne(int px, int py, RaytracerData_t const &rtdata, void *input_b
 
 void ApplyRTmodel(Ray_t &ray, double step, RaytracerData_t const &rtdata)
 {
-  int depth = ray.fNextState->GetLevel();
+  int depth = ray.fNextState.GetLevel();
   if (rtdata.fModel == kRTspecular) { // specular reflection
     // Calculate normal at the hit point
     bool valid = ray.fVolume != nullptr && depth >= rtdata.fVisDepth;
     if (valid) {
       Transformation3D m;
-      ray.fNextState->TopMatrix(m);
+      ray.fNextState.TopMatrix(m);
       auto localpoint = m.Transform(ray.fPos);
       Vector3D<double> norm, lnorm;
       ray.fVolume->GetLogicalVolume()->GetUnplacedVolume()->Normal(localpoint, lnorm);
@@ -250,10 +235,6 @@ void ApplyRTmodel(Ray_t &ray, double step, RaytracerData_t const &rtdata)
 void PropagateRays(RaytracerData_t &rtdata, void *input_buffer, void *output_buffer)
 {
   // Propagate all rays and write out the image on the CPU
-  // The viewpoint state is the first in the buffer
-  NavigationState *vpstate = reinterpret_cast<NavigationState*>(input_buffer);
-  rtdata.fVPstate = vpstate;
-
   auto buffer = (unsigned char *)output_buffer;
   size_t n10    = 0.1 * rtdata.fNrays;
   size_t icrt   = 0;
@@ -276,7 +257,7 @@ void PropagateRays(RaytracerData_t &rtdata, void *input_buffer, void *output_buf
 
 ///< Explicit navigation functions, we should be using the navigator functionality when it works
 VPlacedVolume const *LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precision> const &point,
-                                       NavigationState &path, bool top)
+                                       NavStateIndex &path, bool top)
 {
   VPlacedVolume const *candvolume = vol;
   Vector3D<Precision> currentpoint(point);
@@ -307,7 +288,7 @@ VPlacedVolume const *LocateGlobalPoint(VPlacedVolume const *vol, Vector3D<Precis
 }
 
 VPlacedVolume const *LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlacedVolume const *excludedvolume,
-                                                 Vector3D<Precision> const &point, NavigationState &path, bool top)
+                                                 Vector3D<Precision> const &point, NavStateIndex &path, bool top)
 {
   VPlacedVolume const *candvolume = vol;
   Vector3D<Precision> currentpoint(point);
@@ -343,7 +324,7 @@ VPlacedVolume const *LocateGlobalPointExclVolume(VPlacedVolume const *vol, VPlac
   return candvolume;
 }
 
-VPlacedVolume const *RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavigationState &path)
+VPlacedVolume const *RelocatePointFromPathForceDifferent(Vector3D<Precision> const &localpoint, NavStateIndex &path)
 {
   VPlacedVolume const *currentmother = path.Top();
   VPlacedVolume const *entryvol      = currentmother;
@@ -370,7 +351,7 @@ VPlacedVolume const *RelocatePointFromPathForceDifferent(Vector3D<Precision> con
 }
 
 double ComputeStepAndPropagatedState(Vector3D<Precision> const &globalpoint, Vector3D<Precision> const &globaldir,
-                                     Precision step_limit, NavigationState const &in_state, NavigationState &out_state)
+                                     Precision step_limit, NavStateIndex const &in_state, NavStateIndex &out_state)
 {
   // calculate local point/dir from global point/dir
   // call the static function for this provided/specialized by the Impl
